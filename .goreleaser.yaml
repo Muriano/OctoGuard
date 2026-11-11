@@ -1,0 +1,44 @@
+# Release config for octoguard. Run on tag push by .github/workflows/release.yml.
+version: 2
+
+project_name: octoguard
+
+builds:
+  - id: octoguard
+    main: ./cmd/octoguard
+    binary: octoguard
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/Muriano/OctoGuard/internal/cli.Version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+
+brews:
+  - name: octoguard
+    repository:
+      owner: Muriano
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/Muriano/OctoGuard
+    description: GitHub API quota guardian for AI agents
+    license: MIT
+    install: |
+      bin.install "octoguard"
+    test: |
+      system "#{bin}/octoguard", "--version"

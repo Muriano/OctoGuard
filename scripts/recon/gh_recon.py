@@ -13,14 +13,31 @@ import collections
 import json
 import os
 import re
+import shlex
 import sys
 import time
 
 GH_HINTS = ('"gh ', "gh pr", "gh api", "mcp__github", "gh run", "gh issue")
 GH_RE = re.compile(r"(?:^|[;&|(\s])gh\s+([a-z-]+)(?:\s+([a-z-]+))?")
-GH_API_PATH_RE = re.compile(r"gh api\s+(?:-[^\s]+\s+)*([^\s]+)")
-SLEEP_GH_RE = re.compile(r"\bsleep\b")
-WATCH_RE = re.compile(r"\bgh\b.*(--watch\b|\brun\s+watch\b)", re.S)
+SLEEP_RE = re.compile(r"\bsleep\b")
+# Only applied to commands that already contain a `gh` call (see scan).
+WATCH_RE = re.compile(r"--watch\b|\bgh\s+run\s+watch\b")
+PLACEHOLDER_RE = re.compile(r"^\{[a-z_]+\}$")
+GH_API_VALUE_FLAGS = {
+    "-H", "--header", "-f", "--raw-field", "-F", "--field", "-X", "--method",
+    "-q", "--jq", "-t", "--template", "--input", "--hostname", "--cache", "-p", "--preview",
+}  # fmt: skip
+# Path segments printed as-is; anything else (owner, repo, user, branch, SHA...) is masked.
+API_KEYWORDS = {
+    "actions", "artifacts", "assignees", "attempts", "branches", "check-runs", "check-suites",
+    "collaborators", "comments", "commits", "compare", "contents", "deployments", "environments",
+    "events", "files", "git", "graphql", "heads", "hooks", "issues", "items", "jobs", "labels",
+    "logs", "members", "merge", "merges", "milestones", "notifications", "orgs", "projects",
+    "protection", "pulls", "rate_limit", "reactions", "refs", "releases", "repos",
+    "requested_reviewers", "required_status_checks", "rerun", "reviews", "rulesets", "runs",
+    "search", "status", "statuses", "tags", "teams", "timeline", "user", "users", "variables",
+    "workflows",
+}  # fmt: skip
 
 
 def is_rate_limit_line(line):
@@ -63,14 +80,47 @@ def extract_commands(obj, mcp):
     return texts
 
 
+def api_endpoint(text, start):
+    """Return the endpoint argument of a `gh api` call, skipping flags and their values."""
+    rest = text[start : start + 4000]
+    try:
+        toks = shlex.split(rest)
+    except ValueError:
+        toks = rest.split()
+    i = 2  # skip "gh", "api"
+    while i < len(toks):
+        tok = toks[i]
+        if tok in GH_API_VALUE_FLAGS:
+            i += 2
+        elif tok.startswith("-"):
+            i += 1
+        else:
+            return tok
+    return ""
+
+
+def anonymize_endpoint(endpoint):
+    """Keep only known REST keywords; owners, repos, users, branches, SHAs... become X."""
+    path = re.sub(r"^https?://[^/]+(?:/api/v3)?", "", endpoint.split("?")[0])
+    out = []
+    for seg in path.split("/"):
+        if not seg:
+            continue
+        if seg.isdigit():
+            out.append("N")
+        elif seg in API_KEYWORDS or PLACEHOLDER_RE.match(seg):
+            out.append(seg)
+        else:
+            out.append("X")
+    return "/".join(out)[:60]
+
+
 def command_key(text, match):
     sub, sub2 = match.group(1), match.group(2) or ""
     if sub != "api":
         return f"gh {sub} {sub2}".strip()
-    path = GH_API_PATH_RE.search(text[match.start() :])
-    key = "gh api " + (path.group(1) if path else "").split("?")[0][:60]
-    key = re.sub(r"/\d+", "/N", key)
-    return re.sub(r"repos/[^/]+/[^/]+", "repos/O/R", key)
+    start = text.find("gh", match.start())
+    return ("gh api " + anonymize_endpoint(api_endpoint(text, start))).strip()
 
 
 def scan(roots, days):
@@ -109,7 +159,7 @@ def scan(roots, days):
                             if not n:
                                 continue
                             t["gh_invocations"] += n
-                            if SLEEP_GH_RE.search(text):
+                            if SLEEP_RE.search(text):
                                 t["sleep_gh"] += 1
                             if WATCH_RE.search(text):
                                 t["watch"] += 1

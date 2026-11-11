@@ -15,7 +15,7 @@ Es el script de reconocimiento que se usó en el diseño. Recorre las transcripc
 | `watch` | Comandos `gh … --watch` y `gh run watch` |
 | `rate_limit_errors` | Líneas con `API rate limit exceeded` o `secondary rate limit` |
 
-También lista los subcomandos más usados, con los repos y los números anonimizados (`repos/O/R/pulls/N`), y las tools MCP de GitHub.
+También lista los subcomandos más usados, con las rutas de `gh api` anonimizadas: solo se conservan las palabras conocidas de la API REST, los números pasan a `N` y el resto (owner, repo, usuario, rama, SHA…) pasa a `X`, por ejemplo `repos/X/X/pulls/N`. También lista las tools MCP de GitHub usadas.
 
 ```sh
 python3 scripts/recon/gh_recon.py --days 14            # tabla

@@ -12,4 +12,18 @@ Los agentes que trabajan en paralelo con el mismo token agotan la cuota de GitHu
 - `octoguard stats`: panel en consola con el uso y el ahorro.
 - Autodescubrimiento para agentes (`octoguard agent-context`, `octoguard guide`).
 
-> Estado: **diseño**. Aún no hay código. Ver [diseño](docs/design/2026-11-11-octoguard-v1-design.md), [plan](docs/plans/2026-11-11-octoguard-v1.md) y los [issues](https://github.com/Muriano/OctoGuard/issues).
+> Estado: **en desarrollo**. Ya está el esqueleto (CLI raíz, CI y servidor GitHub falso para tests); los comandos llegan con los siguientes [issues](https://github.com/Muriano/OctoGuard/issues). Ver [diseño](docs/design/2026-11-11-octoguard-v1-design.md) y [plan](docs/plans/2026-11-11-octoguard-v1.md).
+
+## Desarrollo
+
+Requiere Go 1.23+ y [golangci-lint](https://golangci-lint.run/) v2.
+
+```sh
+make build   # bin/octoguard, con la versión de `git describe`
+make test    # go vet + go test -race (incluye testdata/fakegh)
+make lint    # golangci-lint
+```
+
+## Licencia
+
+[MIT](LICENSE)

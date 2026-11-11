@@ -4,7 +4,7 @@ Fecha: 2026-11-11 · Estado: borrador para aprobación
 
 ## 1. Intención y porqué
 
-Trabajo con varios agentes de IA a la vez (Claude Code, Codex, Gemini, Copilot), lanzados a mano o por debajo de herramientas como orkestrator y Heimdallm, y todos comparten el mismo token de GitHub. Varias veces al día alguno agota la cuota de la API y **todo queda bloqueado**. En la práctica, cinco minutos parado es perder competitividad.
+Trabajo con varios agentes de IA a la vez (Claude Code, Codex, Gemini, Copilot), lanzados a mano o por debajo de orquestadores propios, y todos comparten el mismo token de GitHub. Varias veces al día alguno agota la cuota de la API y **todo queda bloqueado**. En la práctica, cinco minutos parado es perder competitividad.
 
 **Éxito = cero paradas por rate limit en el uso diario multi-agente**, sin que los agentes pierdan frescura en los datos que importan.
 
@@ -36,7 +36,7 @@ El problema de fondo es de comportamiento: por contexto se le puede pedir al age
 
 ## 3. No-objetivos (v1)
 
-- Optimizar orkestrator o Heimdallm como programas: se hace por otro lado. Solo nos importan los agentes que estos lanzan, y esos usan la skill.
+- Optimizar los orquestadores como programas: se hace por otro lado. Solo nos importan los agentes que estos lanzan, y esos usan la skill.
 - Ser un proxy transparente o reemplazar `gh`: los agentes usan `octoguard` a propósito porque la skill se lo indica.
 - Batching o reordenación de escrituras, colas de mutaciones, reintentos inteligentes de escritura.
 - Webhooks / servidor público / GitHub App. Todo es local.

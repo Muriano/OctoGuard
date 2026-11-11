@@ -110,6 +110,17 @@ func TestParseRef_OtherHostRejected(t *testing.T) {
 	}
 }
 
+func TestParse_RemoteCredentialsNotInError(t *testing.T) {
+	const secret = "ghp_SECRETTOKEN"
+	_, err := Parse("5", PR, gitRepo(t, "https://x-access-token:"+secret+"@github.com/a/b/c.git"))
+	if !errors.Is(err, ErrUsage) {
+		t.Fatalf("err = %v, want ErrUsage", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error leaks remote credentials: %v", err)
+	}
+}
+
 func TestParse_Invalid(t *testing.T) {
 	tests := []struct {
 		name string

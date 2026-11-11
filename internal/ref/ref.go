@@ -121,13 +121,14 @@ func parseURL(s string, kind Kind) (Ref, error) {
 }
 
 // parseRemote extracts owner and repo from an https, ssh:// or scp-like
-// (git@host:owner/repo.git) remote URL.
+// (git@host:owner/repo.git) remote URL. Errors never include the remote, which
+// may embed credentials.
 func parseRemote(remote string) (owner, repo string, err error) {
 	var host, path string
 	if strings.Contains(remote, "://") {
 		u, perr := url.Parse(remote)
 		if perr != nil {
-			return "", "", usagef("cannot parse origin remote %q", remote)
+			return "", "", usagef("cannot parse the origin remote URL; use owner/repo#N")
 		}
 		host, path = u.Hostname(), u.Path
 	} else if at, rest, ok := strings.Cut(remote, ":"); ok {
@@ -137,14 +138,14 @@ func parseRemote(remote string) (owner, repo string, err error) {
 		}
 		path = rest
 	} else {
-		return "", "", usagef("cannot parse origin remote %q", remote)
+		return "", "", usagef("cannot parse the origin remote URL; use owner/repo#N")
 	}
 	if err := checkHost(host); err != nil {
 		return "", "", err
 	}
 	parts := strings.Split(strings.TrimSuffix(strings.Trim(path, "/"), ".git"), "/")
 	if len(parts) != 2 {
-		return "", "", usagef("origin remote %q is not a github.com owner/repo", remote)
+		return "", "", usagef("origin remote is not a github.com owner/repo URL; use owner/repo#N")
 	}
 	return parts[0], parts[1], nil
 }

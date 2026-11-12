@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,8 +110,9 @@ func TestStats_FormatJSONExplicit(t *testing.T) {
 
 func TestStats_InvalidSince(t *testing.T) {
 	statsEnv(t)
-	if _, err := runStatsCmd(t, context.Background(), "--since", "2h"); err == nil {
-		t.Fatal("expected an error for --since 2h")
+	_, err := runStatsCmd(t, context.Background(), "--since", "2h")
+	if !errors.Is(err, ref.ErrUsage) {
+		t.Fatalf("err = %v, want a ref.ErrUsage usage error", err)
 	}
 }
 

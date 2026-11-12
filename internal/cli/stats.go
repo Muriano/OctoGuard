@@ -67,7 +67,7 @@ func runStats(cmd *cobra.Command, _ []string) error {
 	}
 	since, ok := statsWindows[sinceFlag]
 	if !ok {
-		return fmt.Errorf("invalid --since %q: must be 1h, 24h, 7d or 30d", sinceFlag)
+		return fmt.Errorf("%w: invalid --since %q: must be 1h, 24h, 7d or 30d", ref.ErrUsage, sinceFlag)
 	}
 	live, err := flags.GetBool("live")
 	if err != nil {

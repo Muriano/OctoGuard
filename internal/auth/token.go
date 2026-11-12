@@ -52,6 +52,10 @@ func Resolve(ctx context.Context) (Token, error) {
 	return Token{}, ErrNoToken
 }
 
+// FromValue builds the Token of a raw value received from a client, such as
+// the daemon getting it over its socket.
+func FromValue(value string) Token { return newToken(value, "client") }
+
 func newToken(value, source string) Token {
 	sum := sha256.Sum256([]byte(value))
 	return Token{Value: value, Source: source, ID: hex.EncodeToString(sum[:])[:16]}

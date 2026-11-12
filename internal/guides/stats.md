@@ -15,4 +15,9 @@ How "saved" is counted:
   30s by default and is shown in the output; set `OCTOGUARD_POLL_BASELINE`
   (e.g. `15s`) to change it.
 
-`rest_saved` adds them all up as REST calls.
+`rest_saved` adds them all up as REST calls. `graphql_points_saved` is 0:
+every cached read goes through REST, even one first fetched through GraphQL,
+so every cache hit and `304` is a REST read (see Muriano/OctoGuard#32).
+
+A rate limit is "avoided" when the governor holds a request, or `wait` polls
+slower than its base interval, before the quota runs out.

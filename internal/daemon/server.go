@@ -23,6 +23,7 @@ import (
 	"github.com/Muriano/OctoGuard/internal/quota"
 	"github.com/Muriano/OctoGuard/internal/ref"
 	"github.com/Muriano/OctoGuard/internal/wait"
+	"github.com/Muriano/OctoGuard/internal/write"
 )
 
 // ErrAlreadyRunning is returned by Run when another daemon holds the lock.
@@ -59,6 +60,7 @@ type server struct {
 	log     *log.Logger
 	sf      singleflight.Group
 	pool    *wait.Pool
+	spacer  *write.Spacer
 	started time.Time
 
 	mu      sync.Mutex
@@ -121,6 +123,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cache:   ch,
 		gov:     gov,
 		pool:    pool,
+		spacer:  write.NewSpacer(nil, nil),
 		log:     logger,
 		started: time.Now(),
 		clients: map[string]*gh.Client{},
@@ -286,7 +289,9 @@ func (s *server) handle(ctx context.Context, req Request) Response {
 		return success(s.gov.Snapshot(gh.Scope(ref.Host, auth.FromValue(req.Token))))
 	case OpWait:
 		return s.wait(ctx, req)
-	case OpWrite, OpStats:
+	case OpWrite:
+		return s.write(ctx, req)
+	case OpStats:
 		return failure(CodeError, fmt.Sprintf("operation %q is not implemented yet", req.Op))
 	default:
 		return failure(CodeUsage, fmt.Sprintf("unknown operation %q", req.Op))
@@ -357,6 +362,30 @@ func (s *server) wait(ctx context.Context, req Request) Response {
 			return res.Data, err
 		},
 	})
+	if err != nil {
+		code := CodeError
+		if errors.Is(err, ref.ErrUsage) {
+			code = CodeUsage
+		}
+		return failure(code, err.Error())
+	}
+	return success(res)
+}
+
+// write performs a write, queued behind the token's earlier writes so that
+// every CLI on the machine shares one spacing. A client hanging up (ctx)
+// drops its queued write.
+func (s *server) write(ctx context.Context, req Request) Response {
+	if req.Token == "" {
+		return failure(CodeUsage, "missing token")
+	}
+	var a write.Request
+	if err := json.Unmarshal(req.Args, &a); err != nil {
+		return failure(CodeUsage, "malformed write arguments")
+	}
+	tok := auth.FromValue(req.Token)
+	w := &write.Writer{Client: s.client(tok), Cache: s.cache, Spacer: s.spacer, Scope: gh.Scope(ref.Host, tok)}
+	res, err := w.Execute(ctx, a)
 	if err != nil {
 		code := CodeError
 		if errors.Is(err, ref.ErrUsage) {

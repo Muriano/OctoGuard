@@ -23,6 +23,7 @@ func TestExitCode(t *testing.T) {
 		{"ref.Parse usage", parseErr, 2},
 		{"generic", errors.New("github: 500"), 1},
 		{"wait pending", cli.ErrPending, 3},
+		{"merge rejected", cli.ErrMergeRejected, 4},
 	} {
 		if got := exitCode(tc.err); got != tc.want {
 			t.Errorf("%s: exitCode = %d, want %d", tc.name, got, tc.want)

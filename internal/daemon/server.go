@@ -114,6 +114,7 @@ func Run(ctx context.Context, cfg Config) error {
 	gov := quota.New(time.Now)
 	wcfg := waitConfig
 	wcfg.Gov = gov
+	wcfg.Counters = ch
 	pool := wait.NewPool(wcfg)
 	defer pool.Close()
 	s := &server{

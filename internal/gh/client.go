@@ -43,6 +43,9 @@ const (
 	CounterRESTCall      = "rest_call"      // a REST request not answered 304
 	CounterGraphQLPoints = "graphql_points" // GraphQL points spent
 	CounterRateLimitHit  = "ratelimit_hit"  // a response refused for rate limiting
+	// CounterThrottle counts the times the governor slowed a caller down
+	// before the quota ran out (a rate limit avoided).
+	CounterThrottle = "throttle"
 )
 
 // CounterSink receives usage counters. *cache.Cache implements it.
@@ -236,6 +239,7 @@ func (rd *read) rest(key, path string) ([]byte, error) {
 		cost = 0 // a 304 does not consume quota
 	}
 	if wait := c.gov.Allow(rd.scope, "core", cost); wait > 0 {
+		rd.count(CounterThrottle, 1)
 		if ok && !rd.opt.Fresh {
 			return rd.serveCached(e), nil
 		}
@@ -301,6 +305,7 @@ func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(d
 		return rd.serveCached(e), nil
 	}
 	if wait := c.gov.Allow(rd.scope, "graphql", 1); wait > 0 {
+		rd.count(CounterThrottle, 1)
 		if ok && !rd.opt.Fresh {
 			return rd.serveCached(e), nil
 		}

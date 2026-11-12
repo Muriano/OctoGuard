@@ -137,7 +137,7 @@ func waitInProcess(ctx context.Context, cmd *cobra.Command, tok auth.Token, ch *
 	}
 	gov := quota.New(time.Now)
 	c := gh.NewClient(apiURL, tok, ch, gov, ch)
-	pool := wait.NewPool(wait.Config{Gov: gov, MinInterval: fallbackMinInterval})
+	pool := wait.NewPool(wait.Config{Gov: gov, Counters: ch, MinInterval: fallbackMinInterval})
 	defer pool.Close()
 	return pool.Wait(ctx, wait.Request{
 		Scope: gh.Scope(a.Ref.Host, tok), Ref: a.Ref, Cond: a.Condition, Timeout: a.Timeout,

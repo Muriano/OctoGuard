@@ -35,6 +35,9 @@ type Fetch func(ctx context.Context, r ref.Ref, what gh.Resource) (json.RawMessa
 type Config struct {
 	// Gov scales the base interval by the remaining quota; nil uses the base.
 	Gov *quota.Governor
+	// Counters receives a gh.CounterThrottle each time Gov stretches an
+	// interval beyond its base; nil records nothing.
+	Counters gh.CounterSink
 	// ChecksBase is the base interval of checks and run conditions,
 	// OtherBase the one of the rest.
 	ChecksBase, OtherBase time.Duration
@@ -364,6 +367,10 @@ func (p *Pool) interval(pl *poller) time.Duration {
 	iv := base
 	if p.cfg.Gov != nil {
 		iv = p.cfg.Gov.PollInterval(pl.scope, "core", base)
+		if iv > base && p.cfg.Counters != nil {
+			// Best effort, like every counter.
+			_ = p.cfg.Counters.IncCounter(pl.scope, gh.CounterThrottle, 1, time.Now())
+		}
 	}
 	return max(iv, p.cfg.MinInterval)
 }

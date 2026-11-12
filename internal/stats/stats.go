@@ -12,16 +12,17 @@ import (
 	"github.com/Muriano/OctoGuard/internal/quota"
 )
 
-// Counters read by stats that no package on main emits yet. They are named
-// here so that their producers emit exactly these names.
+// Counters read by stats that are not named in the gh package.
 const (
 	// CounterWaitSaved is emitted by `wait` (T09): the polls a fixed-interval
 	// loop at the baseline would have made, minus the polls actually made.
 	CounterWaitSaved = "wait_saved"
-	// CounterThrottle counts the times the governor slowed callers down
-	// before the quota ran out (a rate limit avoided).
-	CounterThrottle = "throttle"
 )
+
+// CounterThrottle counts the times the governor slowed callers down before
+// the quota ran out (a rate limit avoided). The gh client and the wait
+// poller emit it.
+const CounterThrottle = gh.CounterThrottle
 
 // DefaultBaseline is the polling interval of the reference `sleep N && gh`
 // loop that `wait` is compared against.
@@ -63,8 +64,10 @@ type Saved struct {
 	TotalCalls int64 `json:"total_calls"`
 	// RESTSaved is every avoided request, counted as one REST call each.
 	RESTSaved int64 `json:"rest_saved"`
-	// GraphQLPointsSaved is the GraphQL points avoided. The counters do not
-	// record which API an avoided read would have used, so it is 0 for now.
+	// GraphQLPointsSaved is the GraphQL points avoided. It is 0: the router
+	// sends every cached read to REST, GraphQL entries included, so every
+	// cache hit and 304 is a REST read and RESTSaved already counts it.
+	// See https://github.com/Muriano/OctoGuard/issues/32.
 	GraphQLPointsSaved int64 `json:"graphql_points_saved"`
 }
 

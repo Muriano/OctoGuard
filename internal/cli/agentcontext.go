@@ -43,6 +43,7 @@ type outputSchema struct {
 
 var (
 	daemonSchema = &outputSchema{Format: "json", Fields: []string{"schema_version", "running", "pid", "version", "started_at", "connections", "pollers", "waiters"}, Note: "pid and the rest only when running"}
+	skillsSchema = &outputSchema{Format: "json", Fields: []string{"schema_version", "results"}, Note: "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"}
 	writeSchema  = &outputSchema{Format: "json", Fields: []string{"schema_version", "op", "status", "data", "reason", "hint"}, Note: "status ok carries data; status rejected carries reason and hint"}
 )
 
@@ -64,6 +65,8 @@ var outputSchemas = map[string]*outputSchema{
 	"project item-add":  writeSchema,
 	"project item-edit": writeSchema,
 	"quota":             {Format: "json", Fields: []string{"schema_version", "core", "graphql", "search", "meta"}, Note: "each bucket: remaining, limit, reset, known; meta: probed"},
+	"skills install":    skillsSchema,
+	"skills update":     skillsSchema,
 	"stats":             {Format: "text", Fields: []string{"schema_version", "since", "baseline", "at", "quota", "saved", "hourly", "rate_limits"}, Note: "a panel by default; the fields are for an explicit --format json"},
 	"wait":              {Format: "json", Fields: []string{"schema_version", "ref", "status", "condition", "changes", "state"}, Note: "status: met|failed|pending"},
 }

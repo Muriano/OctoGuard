@@ -346,3 +346,37 @@ func TestRequiredChecks_MergesProtectionAndRulesets(t *testing.T) {
 		t.Errorf("Data = %s, want %s", res.Data, want)
 	}
 }
+
+func TestGet_PRReadViaGraphQLMovesToETags(t *testing.T) {
+	e := newEnv(t)
+	setPR(e.srv)
+	e.srv.SetResource("/graphql", []byte(`{"data":{"repository":{"pullRequest":{"number":2,"state":"OPEN","headRefOid":"abc"}}}}`), "")
+
+	if res := e.get(t, prRef, PR, GetOpts{}); res.Via != "graphql" {
+		t.Fatalf("first read Via = %s, want graphql", res.Via)
+	}
+	if res := e.get(t, prRef, PR, GetOpts{}); res.Via != "rest" || res.NotModified {
+		t.Fatalf("second read = %+v, want a REST read that fills the ETags", res)
+	}
+	third := e.get(t, prRef, PR, GetOpts{})
+	if third.Via != "rest" || !third.NotModified {
+		t.Fatalf("third read = %+v, want REST answered 304", third)
+	}
+	if got := e.srv.GraphQLCalls(); got != 1 {
+		t.Errorf("GraphQLCalls = %d, want 1", got)
+	}
+}
+
+func TestGet_GraphQLRateLimitError(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResource("/graphql", []byte(`{"errors":[{"type":"RATE_LIMIT","code":"graphql_rate_limit","message":"API rate limit already exceeded"}]}`), "")
+
+	_, err := e.c.Get(context.Background(), prRef, PR, GetOpts{})
+	var rl *RateLimitError
+	if !errors.As(err, &rl) || rl.Resource != "graphql" {
+		t.Fatalf("err = %v, want a RateLimitError on graphql", err)
+	}
+	if got := e.counter(t, CounterRateLimitHit); got != 1 {
+		t.Errorf("ratelimit_hit = %d, want 1", got)
+	}
+}

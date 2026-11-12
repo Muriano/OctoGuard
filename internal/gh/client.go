@@ -145,9 +145,15 @@ func (c *Client) Get(ctx context.Context, r ref.Ref, what Resource, opt GetOpts)
 	rd := &read{c: c, ctx: ctx, scope: Scope(r.Host, c.tok), opt: opt}
 	via := route.REST
 	if key := primaryKey(r, what); key != "" {
-		_, cached, err := c.cache.Get(rd.scope, key)
-		if err != nil {
-			return Result{}, err
+		// A GraphQL entry also counts as cached: the next read moves to
+		// REST, whose ETags make later revalidations free.
+		cached := false
+		for _, k := range []string{key, graphQLKey(r, what)} {
+			_, ok, err := c.cache.Get(rd.scope, k)
+			if err != nil {
+				return Result{}, err
+			}
+			cached = cached || ok
 		}
 		via = route.Choose(what, cached, c.gov.Snapshot(rd.scope))
 	}
@@ -325,6 +331,7 @@ func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(d
 		Data   json.RawMessage `json:"data"`
 		Errors []struct {
 			Type    string `json:"type"`
+			Code    string `json:"code"`
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
@@ -343,11 +350,11 @@ func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(d
 	rd.count(CounterGraphQLPoints, points)
 	if len(out.Errors) > 0 {
 		first := out.Errors[0]
-		switch first.Type {
-		case "RATE_LIMITED":
+		switch {
+		case first.Type == "RATE_LIMIT" || first.Type == "RATE_LIMITED" || first.Code == "graphql_rate_limit":
 			rd.count(CounterRateLimitHit, 1)
 			return nil, &RateLimitError{Resource: "graphql", Wait: rd.untilReset("graphql")}
-		case "NOT_FOUND":
+		case first.Type == "NOT_FOUND":
 			return nil, &APIError{Status: http.StatusNotFound, Message: first.Message}
 		}
 		return nil, &APIError{Status: http.StatusOK, Message: "graphql: " + first.Message}

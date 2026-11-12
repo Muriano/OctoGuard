@@ -82,6 +82,9 @@ func primaryKey(r ref.Ref, what Resource) string {
 	return ""
 }
 
+// graphQLKey is the cache key of what read through GraphQL.
+func graphQLKey(r ref.Ref, what Resource) string { return r.Key() + "/" + string(what) + "@graphql" }
+
 func pageKey(base string, page int) string { return fmt.Sprintf("%s?page=%d", base, page) }
 
 func repoPath(r ref.Ref) string {
@@ -440,7 +443,7 @@ func (rd *read) graphQLResource(r ref.Ref, what Resource) ([]byte, error) {
 		return nil, fmt.Errorf("github: %s cannot be read through graphql", what)
 	}
 	vars := map[string]any{"owner": r.Owner, "repo": r.Repo, "number": r.Number}
-	return rd.graphQL(r.Key()+"/"+string(what)+"@graphql", query, vars, func(data []byte) ([]byte, error) {
+	return rd.graphQL(graphQLKey(r, what), query, vars, func(data []byte) ([]byte, error) {
 		return normalizeGraphQL(r, what, data)
 	})
 }

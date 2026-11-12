@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -204,5 +206,46 @@ func TestSaved(t *testing.T) {
 		if got := Saved(tc.d, 30*time.Second, tc.polls); got != tc.want {
 			t.Errorf("Saved(%s, 30s, %d) = %d, want %d", tc.d, tc.polls, got, tc.want)
 		}
+	}
+}
+
+type sink struct {
+	mu sync.Mutex
+	n  map[string]int64
+}
+
+func (s *sink) IncCounter(_, name string, n int64, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.n == nil {
+		s.n = map[string]int64{}
+	}
+	s.n[name] += n
+	return nil
+}
+
+func TestInterval_BackoffCountsThrottle(t *testing.T) {
+	gov := quota.New(time.Now)
+	cs := &sink{}
+	p := NewPool(Config{Gov: gov, Counters: cs})
+	pl := &poller{scope: "s", base: time.Second}
+
+	if iv := p.interval(pl); iv != time.Second {
+		t.Fatalf("interval = %v, want the base", iv)
+	}
+	if cs.n[gh.CounterThrottle] != 0 {
+		t.Fatalf("throttle = %d with a healthy quota, want 0", cs.n[gh.CounterThrottle])
+	}
+
+	h := http.Header{}
+	h.Set("X-RateLimit-Limit", "5000")
+	h.Set("X-RateLimit-Remaining", "1000") // 20%: base×4
+	h.Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10))
+	gov.Observe("s", h)
+	if iv := p.interval(pl); iv <= time.Second {
+		t.Fatalf("interval = %v, want a backoff", iv)
+	}
+	if cs.n[gh.CounterThrottle] != 1 {
+		t.Errorf("throttle = %d, want 1", cs.n[gh.CounterThrottle])
 	}
 }

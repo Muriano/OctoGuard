@@ -380,3 +380,21 @@ func TestGet_GraphQLRateLimitError(t *testing.T) {
 		t.Errorf("ratelimit_hit = %d, want 1", got)
 	}
 }
+
+func TestGet_GovernorHoldCountsThrottle(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetRate("core", 0, 5000, time.Now().Add(time.Hour))
+	e.srv.SetResource(issuePath, []byte(`{"number":1}`), `"v1"`)
+
+	e.get(t, issueRef, Issue, GetOpts{}) // the response reports core exhausted
+	res := e.get(t, issueRef, Issue, GetOpts{})
+	if !res.FromCache {
+		t.Fatalf("res = %+v, want the cached entry while the governor holds core", res)
+	}
+	if got := e.srv.Calls(issuePath); got != 1 {
+		t.Errorf("Calls = %d, want 1", got)
+	}
+	if got := e.counter(t, CounterThrottle); got != 1 {
+		t.Errorf("throttle = %d, want 1", got)
+	}
+}

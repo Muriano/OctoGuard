@@ -12,15 +12,15 @@ import (
 	"github.com/Muriano/OctoGuard/internal/quota"
 )
 
-// Counters read by stats that no package on main emits yet. They are named
-// here so that their producers emit exactly these names.
+// Counters read by stats that are not emitted by the gh client.
 const (
 	// CounterWaitSaved is emitted by `wait` (T09): the polls a fixed-interval
 	// loop at the baseline would have made, minus the polls actually made.
 	CounterWaitSaved = "wait_saved"
 	// CounterThrottle counts the times the governor slowed callers down
-	// before the quota ran out (a rate limit avoided).
-	CounterThrottle = "throttle"
+	// before the quota ran out (a rate limit avoided). It is emitted by the
+	// gh client and the wait poller.
+	CounterThrottle = gh.CounterThrottle
 )
 
 // DefaultBaseline is the polling interval of the reference `sleep N && gh`

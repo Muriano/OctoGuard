@@ -18,13 +18,17 @@ func main() {
 }
 
 // exitCode maps an error to the process exit code: 2 for usage errors, 3 for
-// a wait still pending at its timeout, 1 for the rest.
+// a wait still pending at its timeout, 4 for a merge rejected by its checks,
+// 1 for the rest.
 func exitCode(err error) int {
 	if errors.Is(err, ref.ErrUsage) {
 		return 2
 	}
 	if errors.Is(err, cli.ErrPending) {
 		return 3
+	}
+	if errors.Is(err, cli.ErrMergeRejected) {
+		return 4
 	}
 	return 1
 }

@@ -409,6 +409,81 @@ func (rd *read) untilReset(resource string) time.Duration {
 	return max(b.Reset.Sub(rd.c.now()), 0)
 }
 
+// Do sends a REST write (POST, PATCH, PUT, ...) of body, encoded as JSON, to
+// path and returns the response body. Writes are never cached; the caller
+// invalidates what they touch.
+func (c *Client) Do(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("github: %w", err)
+	}
+	rd := &read{c: c, ctx: ctx, scope: Scope(ref.Host, c.tok)}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("github: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+	resp, respBody, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	c.gov.Observe(rd.scope, resp.Header)
+	rd.count(CounterRESTCall, 1)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, rd.failure(resp, respBody, "core")
+	}
+	if len(respBody) == 0 {
+		return nil, nil // e.g. 204 No Content
+	}
+	return respBody, nil
+}
+
+// Mutation is a GraphQL mutation document; Data receives the "data" of the
+// answer.
+type Mutation struct {
+	Query string
+	Data  json.RawMessage
+}
+
+// Mutate runs m with input as its $input variable.
+func (c *Client) Mutate(ctx context.Context, m *Mutation, input any) error {
+	payload, err := json.Marshal(map[string]any{"query": m.Query, "variables": map[string]any{"input": input}})
+	if err != nil {
+		return fmt.Errorf("github: %w", err)
+	}
+	rd := &read{c: c, ctx: ctx, scope: Scope(ref.Host, c.tok)}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/graphql", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("github: %w", err)
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+	resp, body, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	c.gov.Observe(rd.scope, resp.Header)
+	rd.count(CounterGraphQLPoints, 1)
+	if resp.StatusCode != http.StatusOK {
+		return rd.failure(resp, body, "graphql")
+	}
+	var out struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return fmt.Errorf("github: decode graphql response: %w", err)
+	}
+	if len(out.Errors) > 0 {
+		return &APIError{Status: http.StatusOK, Message: "graphql: " + out.Errors[0].Message}
+	}
+	m.Data = out.Data
+	return nil
+}
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.tok.Value)
 	req.Header.Set("Accept", "application/vnd.github+json")

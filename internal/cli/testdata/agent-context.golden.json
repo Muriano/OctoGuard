@@ -736,6 +736,101 @@
       }
     },
     {
+      "path": "skills",
+      "short": "Install or update the octoguard skill for coding agents",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": null
+    },
+    {
+      "path": "skills install",
+      "short": "Install the octoguard SKILL.md where each agent looks for skills",
+      "args": "",
+      "flags": [
+        {
+          "name": "agent",
+          "type": "string",
+          "default": "all",
+          "usage": "agent: claude|codex|gemini|copilot|all"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "default": "user",
+          "usage": "scope: user (home directory) or project (repository root)"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "results"
+        ],
+        "note": "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"
+      }
+    },
+    {
+      "path": "skills update",
+      "short": "Refresh installed octoguard skills; files without the octoguard marker are left alone",
+      "args": "",
+      "flags": [
+        {
+          "name": "agent",
+          "type": "string",
+          "default": "all",
+          "usage": "agent: claude|codex|gemini|copilot|all"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "default": "user",
+          "usage": "scope: user (home directory) or project (repository root)"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "results"
+        ],
+        "note": "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"
+      }
+    },
+    {
       "path": "stats",
       "short": "Show quota use and the GitHub requests octoguard saved",
       "args": "",

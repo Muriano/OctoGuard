@@ -38,6 +38,6 @@ func NewRoot() *cobra.Command {
 	pf.String("api-url", "https://api.github.com", "GitHub API base URL (for tests)")
 	_ = pf.MarkHidden("api-url")
 	root.AddCommand(newDaemonCmd(), newGetCmd(), newQuotaCmd(), newStatsCmd(), newWaitCmd(),
-		newPRCmd(), newIssueCmd(), newProjectCmd())
+		newPRCmd(), newIssueCmd(), newProjectCmd(), newGuideCmd(), newAgentContextCmd())
 	return root
 }

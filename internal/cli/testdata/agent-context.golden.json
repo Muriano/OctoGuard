@@ -1,0 +1,826 @@
+{
+  "schema_version": 1,
+  "version": "v0.0.0-test",
+  "commands": [
+    {
+      "path": "agent-context",
+      "short": "Print the machine-readable schema of every command (JSON, for agents)",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "version",
+          "commands"
+        ]
+      }
+    },
+    {
+      "path": "daemon",
+      "short": "Run or inspect the local octoguard daemon",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": null
+    },
+    {
+      "path": "daemon run",
+      "short": "Run the daemon in the foreground (the CLI starts it on demand)",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "none",
+        "note": "runs the daemon in the foreground until stopped"
+      }
+    },
+    {
+      "path": "daemon status",
+      "short": "Report whether the daemon is running (does not start it)",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "running",
+          "pid",
+          "version",
+          "started_at",
+          "connections",
+          "pollers",
+          "waiters"
+        ],
+        "note": "pid and the rest only when running"
+      }
+    },
+    {
+      "path": "daemon stop",
+      "short": "Stop the daemon if it is running",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "running",
+          "pid",
+          "version",
+          "started_at",
+          "connections",
+          "pollers",
+          "waiters"
+        ],
+        "note": "pid and the rest only when running"
+      }
+    },
+    {
+      "path": "get",
+      "short": "Read a GitHub resource through the daemon's cache",
+      "args": "pr|issue|reviews|comments|checks|runs \u003cref\u003e",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "fresh",
+          "type": "bool",
+          "default": "false",
+          "usage": "validate every part against GitHub, ignoring --max-age"
+        },
+        {
+          "name": "max-age",
+          "type": "duration",
+          "default": "30s",
+          "usage": "serve cached parts younger than this without any request"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "ref",
+          "data",
+          "meta"
+        ],
+        "note": "meta: from_cache, not_modified, via, fetched_at"
+      }
+    },
+    {
+      "path": "guide",
+      "short": "Show an embedded usage guide, or list the topics",
+      "args": "[topic]",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "topics"
+        ],
+        "note": "with a topic: the Markdown guide"
+      }
+    },
+    {
+      "path": "issue",
+      "short": "Write to issues: comment, create",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": null
+    },
+    {
+      "path": "issue comment",
+      "short": "Comment on a issue",
+      "args": "\u003cref\u003e --body TEXT",
+      "flags": [
+        {
+          "name": "body",
+          "shorthand": "b",
+          "type": "string",
+          "default": "",
+          "usage": "body text"
+        },
+        {
+          "name": "body-file",
+          "shorthand": "F",
+          "type": "string",
+          "default": "",
+          "usage": "read the body from a file (\"-\" for stdin)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "issue create",
+      "short": "Create an issue",
+      "args": "--title T",
+      "flags": [
+        {
+          "name": "body",
+          "shorthand": "b",
+          "type": "string",
+          "default": "",
+          "usage": "body text"
+        },
+        {
+          "name": "body-file",
+          "shorthand": "F",
+          "type": "string",
+          "default": "",
+          "usage": "read the body from a file (\"-\" for stdin)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "label",
+          "shorthand": "l",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "add a label (repeatable)"
+        },
+        {
+          "name": "repo",
+          "shorthand": "R",
+          "type": "string",
+          "default": "",
+          "usage": "owner/repo (default: the origin remote of the current directory)"
+        },
+        {
+          "name": "title",
+          "shorthand": "t",
+          "type": "string",
+          "default": "",
+          "usage": "title"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "pr",
+      "short": "Write to pull requests: create, comment, edit, merge",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": null
+    },
+    {
+      "path": "pr comment",
+      "short": "Comment on a pr",
+      "args": "\u003cref\u003e --body TEXT",
+      "flags": [
+        {
+          "name": "body",
+          "shorthand": "b",
+          "type": "string",
+          "default": "",
+          "usage": "body text"
+        },
+        {
+          "name": "body-file",
+          "shorthand": "F",
+          "type": "string",
+          "default": "",
+          "usage": "read the body from a file (\"-\" for stdin)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "pr create",
+      "short": "Create a pull request",
+      "args": "--title T --head BRANCH --base BRANCH",
+      "flags": [
+        {
+          "name": "base",
+          "shorthand": "B",
+          "type": "string",
+          "default": "",
+          "usage": "branch to merge into"
+        },
+        {
+          "name": "body",
+          "shorthand": "b",
+          "type": "string",
+          "default": "",
+          "usage": "body text"
+        },
+        {
+          "name": "body-file",
+          "shorthand": "F",
+          "type": "string",
+          "default": "",
+          "usage": "read the body from a file (\"-\" for stdin)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "head",
+          "shorthand": "H",
+          "type": "string",
+          "default": "",
+          "usage": "branch with the changes"
+        },
+        {
+          "name": "label",
+          "shorthand": "l",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "add a label (repeatable)"
+        },
+        {
+          "name": "repo",
+          "shorthand": "R",
+          "type": "string",
+          "default": "",
+          "usage": "owner/repo (default: the origin remote of the current directory)"
+        },
+        {
+          "name": "title",
+          "shorthand": "t",
+          "type": "string",
+          "default": "",
+          "usage": "title"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "pr edit",
+      "short": "Edit a pull request's title, body or base, or add labels",
+      "args": "\u003cref\u003e",
+      "flags": [
+        {
+          "name": "add-label",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "add a label (repeatable)"
+        },
+        {
+          "name": "base",
+          "shorthand": "B",
+          "type": "string",
+          "default": "",
+          "usage": "new base branch"
+        },
+        {
+          "name": "body",
+          "shorthand": "b",
+          "type": "string",
+          "default": "",
+          "usage": "body text"
+        },
+        {
+          "name": "body-file",
+          "shorthand": "F",
+          "type": "string",
+          "default": "",
+          "usage": "read the body from a file (\"-\" for stdin)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "title",
+          "shorthand": "t",
+          "type": "string",
+          "default": "",
+          "usage": "new title"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "pr merge",
+      "short": "Merge a pull request once its checks are green",
+      "args": "\u003cref\u003e [--merge|--squash|--rebase]",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "merge",
+          "shorthand": "m",
+          "type": "bool",
+          "default": "false",
+          "usage": "merge commit (default)"
+        },
+        {
+          "name": "rebase",
+          "shorthand": "r",
+          "type": "bool",
+          "default": "false",
+          "usage": "rebase and merge"
+        },
+        {
+          "name": "squash",
+          "shorthand": "s",
+          "type": "bool",
+          "default": "false",
+          "usage": "squash and merge"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error",
+        "4": "merge rejected: checks are not green"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "project",
+      "short": "Write to Projects (v2) by node ID: item-add, item-edit",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": null
+    },
+    {
+      "path": "project item-add",
+      "short": "Add an issue or pull request (by node ID) to a project",
+      "args": "--project PVT_... --content-id NODE_ID",
+      "flags": [
+        {
+          "name": "content-id",
+          "type": "string",
+          "default": "",
+          "usage": "node ID of the issue or pull request (\"node_id\" in `octoguard get`)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "",
+          "usage": "project node ID (PVT_...)"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "project item-edit",
+      "short": "Set a field of a project item",
+      "args": "--project PVT_... --id PVTI_... --field PVTF_... --value V",
+      "flags": [
+        {
+          "name": "field",
+          "type": "string",
+          "default": "",
+          "usage": "field node ID (PVTF_...)"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "default": "",
+          "usage": "item node ID (PVTI_...)"
+        },
+        {
+          "name": "project",
+          "type": "string",
+          "default": "",
+          "usage": "project node ID (PVT_...)"
+        },
+        {
+          "name": "value",
+          "type": "string",
+          "default": "",
+          "usage": "new value (for single-select: the option ID)"
+        },
+        {
+          "name": "value-type",
+          "type": "string",
+          "default": "text",
+          "usage": "text|number|date|single-select"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "op",
+          "status",
+          "data",
+          "reason",
+          "hint"
+        ],
+        "note": "status ok carries data; status rejected carries reason and hint"
+      }
+    },
+    {
+      "path": "quota",
+      "short": "Show the remaining GitHub API quota (core, graphql, search)",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "core",
+          "graphql",
+          "search",
+          "meta"
+        ],
+        "note": "each bucket: remaining, limit, reset, known; meta: probed"
+      }
+    },
+    {
+      "path": "stats",
+      "short": "Show quota use and the GitHub requests octoguard saved",
+      "args": "",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "live",
+          "type": "bool",
+          "default": "false",
+          "usage": "refresh every 2s from local data only (no GitHub requests)"
+        },
+        {
+          "name": "since",
+          "type": "string",
+          "default": "24h",
+          "usage": "window to report: 1h|24h|7d|30d"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "text",
+        "fields": [
+          "schema_version",
+          "since",
+          "baseline",
+          "at",
+          "quota",
+          "saved",
+          "hourly",
+          "rate_limits"
+        ],
+        "note": "a panel by default; the fields are for an explicit --format json"
+      }
+    },
+    {
+      "path": "wait",
+      "short": "Block until a condition holds on a PR, issue or workflow run",
+      "args": "pr|issue|run \u003cref\u003e",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        },
+        {
+          "name": "timeout",
+          "type": "duration",
+          "default": "8m0s",
+          "usage": "give up and report pending after this long"
+        },
+        {
+          "name": "until",
+          "type": "string",
+          "default": "",
+          "usage": "condition to wait for (see above)"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error",
+        "3": "pending: the timeout expired first; run the same command again"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "schema_version",
+          "ref",
+          "status",
+          "condition",
+          "changes",
+          "state"
+        ],
+        "note": "status: met|failed|pending"
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Muriano/OctoGuard/internal/gh"
 	"github.com/Muriano/OctoGuard/internal/ref"
+	"github.com/Muriano/OctoGuard/internal/wait"
 )
 
 // Operations understood by the daemon.
@@ -58,12 +59,22 @@ type GetArgs struct {
 	MaxAge time.Duration `json:"max_age,omitempty"`
 }
 
+// WaitArgs are the arguments of OpWait. The data of the answer is a
+// wait.Result.
+type WaitArgs struct {
+	Ref       ref.Ref        `json:"ref"`
+	Condition wait.Condition `json:"condition"`
+	Timeout   time.Duration  `json:"timeout"`
+}
+
 // Status is the data of OpStatus.
 type Status struct {
 	PID         int       `json:"pid"`
 	Version     string    `json:"version"`
 	StartedAt   time.Time `json:"started_at"`
 	Connections int       `json:"connections"`
+	Pollers     int       `json:"pollers"`
+	Waiters     int       `json:"waiters"`
 }
 
 // stateDir is where the cache, the lock and the log live (and the socket when

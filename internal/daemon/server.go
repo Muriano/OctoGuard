@@ -22,6 +22,7 @@ import (
 	"github.com/Muriano/OctoGuard/internal/gh"
 	"github.com/Muriano/OctoGuard/internal/quota"
 	"github.com/Muriano/OctoGuard/internal/ref"
+	"github.com/Muriano/OctoGuard/internal/wait"
 )
 
 // ErrAlreadyRunning is returned by Run when another daemon holds the lock.
@@ -41,6 +42,10 @@ type Config struct {
 	Version string
 }
 
+// waitConfig configures the wait pool (the governor is set by Run); a test
+// hook for shorter intervals and grace.
+var waitConfig = wait.Config{Grace: wait.DefaultGrace}
+
 // onListening is a test hook, called once the daemon holds the lock and
 // listens on the socket.
 var onListening = func() {}
@@ -53,6 +58,7 @@ type server struct {
 	gov     *quota.Governor
 	log     *log.Logger
 	sf      singleflight.Group
+	pool    *wait.Pool
 	started time.Time
 
 	mu      sync.Mutex
@@ -103,12 +109,18 @@ func Run(ctx context.Context, cfg Config) error {
 
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	gov := quota.New(time.Now)
+	wcfg := waitConfig
+	wcfg.Gov = gov
+	pool := wait.NewPool(wcfg)
+	defer pool.Close()
 	s := &server{
 		cfg:     cfg,
 		ctx:     ctx,
 		stop:    stop,
 		cache:   ch,
-		gov:     quota.New(time.Now),
+		gov:     gov,
+		pool:    pool,
 		log:     logger,
 		started: time.Now(),
 		clients: map[string]*gh.Client{},
@@ -219,18 +231,34 @@ func (s *server) onIdle() {
 	s.stop()
 }
 
-// serveConn answers the requests of one client, one line at a time.
+// serveConn answers the requests of one client, one at a time. Lines are read
+// in the background so that a client hanging up is noticed during a long
+// request: it cancels the connection's context, which releases its waits.
 func (s *server) serveConn(c net.Conn) {
-	sc := bufio.NewScanner(c)
-	sc.Buffer(make([]byte, 0, 64<<10), maxLine)
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	lines := make(chan []byte)
+	go func() {
+		defer cancel()
+		defer close(lines)
+		sc := bufio.NewScanner(c)
+		sc.Buffer(make([]byte, 0, 64<<10), maxLine)
+		for sc.Scan() {
+			select {
+			case lines <- append([]byte(nil), sc.Bytes()...):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	enc := json.NewEncoder(c)
-	for sc.Scan() {
+	for line := range lines {
 		var req Request
 		var resp Response
-		if err := json.Unmarshal(sc.Bytes(), &req); err != nil {
+		if err := json.Unmarshal(line, &req); err != nil {
 			resp = failure(CodeUsage, "malformed request")
 		} else {
-			resp = s.handle(req)
+			resp = s.handle(ctx, req)
 		}
 		if err := enc.Encode(resp); err != nil {
 			return
@@ -238,13 +266,17 @@ func (s *server) serveConn(c net.Conn) {
 	}
 }
 
-func (s *server) handle(req Request) Response {
+func (s *server) handle(ctx context.Context, req Request) Response {
 	switch req.Op {
 	case OpStatus:
 		s.mu.Lock()
 		n := len(s.conns)
 		s.mu.Unlock()
-		return success(Status{PID: os.Getpid(), Version: s.cfg.Version, StartedAt: s.started, Connections: n})
+		pollers, waiters := s.pool.Stats()
+		return success(Status{
+			PID: os.Getpid(), Version: s.cfg.Version, StartedAt: s.started, Connections: n,
+			Pollers: pollers, Waiters: waiters,
+		})
 	case OpGet:
 		return s.get(req)
 	case OpQuota:
@@ -252,7 +284,9 @@ func (s *server) handle(req Request) Response {
 			return failure(CodeUsage, "missing token")
 		}
 		return success(s.gov.Snapshot(gh.Scope(ref.Host, auth.FromValue(req.Token))))
-	case OpWait, OpWrite, OpStats:
+	case OpWait:
+		return s.wait(ctx, req)
+	case OpWrite, OpStats:
 		return failure(CodeError, fmt.Sprintf("operation %q is not implemented yet", req.Op))
 	default:
 		return failure(CodeUsage, fmt.Sprintf("unknown operation %q", req.Op))
@@ -293,6 +327,44 @@ func (s *server) get(req Request) Response {
 		return failure(code, err.Error())
 	}
 	return success(v.(gh.Result))
+}
+
+// wait blocks until the condition is met, can no longer be met or the
+// timeout expires, or until the client hangs up (ctx).
+func (s *server) wait(ctx context.Context, req Request) Response {
+	if req.Token == "" {
+		return failure(CodeUsage, "missing token")
+	}
+	var a WaitArgs
+	if err := json.Unmarshal(req.Args, &a); err != nil {
+		return failure(CodeUsage, "malformed wait arguments")
+	}
+	if a.Ref.Host != ref.Host || a.Ref.Owner == "" || a.Ref.Repo == "" || a.Ref.Number <= 0 {
+		return failure(CodeUsage, "invalid ref: v1 supports github.com owner/repo#number")
+	}
+	if _, err := wait.ParseCondition(a.Ref.Kind, string(a.Condition)); err != nil {
+		return failure(CodeUsage, err.Error())
+	}
+	if a.Timeout <= 0 {
+		return failure(CodeUsage, "timeout must be positive")
+	}
+	tok := auth.FromValue(req.Token)
+	c := s.client(tok)
+	res, err := s.pool.Wait(ctx, wait.Request{
+		Scope: gh.Scope(a.Ref.Host, tok), Ref: a.Ref, Cond: a.Condition, Timeout: a.Timeout,
+		Fetch: func(ctx context.Context, r ref.Ref, what gh.Resource) (json.RawMessage, error) {
+			res, err := c.Get(ctx, r, what, gh.GetOpts{})
+			return res.Data, err
+		},
+	})
+	if err != nil {
+		code := CodeError
+		if errors.Is(err, ref.ErrUsage) {
+			code = CodeUsage
+		}
+		return failure(code, err.Error())
+	}
+	return success(res)
 }
 
 // client returns the GitHub client of tok, creating it on first use.

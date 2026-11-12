@@ -97,6 +97,19 @@ func TestRender_UnknownQuota(t *testing.T) {
 	}
 }
 
+func TestRender_DropsUnsafeResourceNames(t *testing.T) {
+	fixedNow(t)
+	snap := map[string]quota.Bucket{
+		"code_scanning":   {Remaining: 9, Limit: 10, Known: true},
+		"x\x1b]0;pwn\x07": {Remaining: 9, Limit: 10, Known: true},
+	}
+	var buf bytes.Buffer
+	Render(&buf, Compute(nil, snap, time.Hour), 80, false)
+	if strings.Contains(buf.String(), "\x1b") || !strings.Contains(buf.String(), "code_scanning") {
+		t.Errorf("unexpected quota rows:\n%q", buf.String())
+	}
+}
+
 func assertMaxWidth(t *testing.T, out string, width int) {
 	t.Helper()
 	for i, l := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {

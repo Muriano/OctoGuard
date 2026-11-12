@@ -142,12 +142,23 @@ func quotaOrder(r Report) []string {
 	order := []string{"core", "graphql", "search"}
 	var extra []string
 	for name := range r.Quota {
-		if name != "core" && name != "graphql" && name != "search" {
+		if name != "core" && name != "graphql" && name != "search" && safeName(name) {
 			extra = append(extra, name)
 		}
 	}
 	sort.Strings(extra)
 	return append(order, extra...)
+}
+
+// safeName reports whether a resource name (from the X-RateLimit-Resource
+// header) is plain [a-z0-9_], so it cannot carry terminal escape codes.
+func safeName(s string) bool {
+	for _, c := range s {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func series(h []HourPoint) (realCalls, avoided []int64) {

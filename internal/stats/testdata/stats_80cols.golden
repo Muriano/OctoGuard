@@ -1,0 +1,23 @@
+OctoGuard stats · last 24h
+
+Quota
+  core      ████████████████████████░░░░░░░░░░░░░░░  62%   3100/5000 reset   37m
+  graphql   ██████████████████████████████████████░  97%   4880/5000 reset 1h05m
+  search    unknown
+
+Saved  384 of 450 calls (85%)
+  cache     ██████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░ 253
+  etag 304  █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  31
+  dedup     ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  12
+  wait      ██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  88
+  REST calls 384 · GraphQL points 0
+
+Hourly  oldest → now, peak 103/h
+  real      ▁▁·▁▁▁▁▁▁·▁▁▁▁▁▁·▁▁▁▁▁▁·
+  avoided   ·▂▁▁▁▂▂▁▁▁▂▁▁▁▂▂▁▁▁▂█▁▁▃
+
+Rate limits  avoided 4 · suffered 1
+
+Saved = cache hits + 304 revalidations + reads joined in flight + (polls of a
+30s sleep loop during waits − polls made). Each counts as 1 REST call; real =
+REST calls that spent quota. Set the baseline with OCTOGUARD_POLL_BASELINE.

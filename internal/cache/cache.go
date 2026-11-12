@@ -27,6 +27,7 @@ type Entry struct {
 	LastModified string
 	FetchedAt    time.Time
 	Via          string // "rest" or "graphql"
+	Cost         int64  // GraphQL points the entry cost to fetch; 0 for REST
 }
 
 // Bucket is the total of one counter within one hour.
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS entries (
 	last_modified TEXT    NOT NULL,
 	fetched_at    INTEGER NOT NULL, -- unix nanoseconds
 	via           TEXT    NOT NULL,
+	cost          INTEGER NOT NULL DEFAULT 0, -- GraphQL points spent to fetch it
 	PRIMARY KEY (token_id, key)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS counters (
@@ -125,7 +127,14 @@ func enableWAL(db *sql.DB, timeout time.Duration) error {
 	}
 }
 
-// initSchema creates the tables inside a BEGIN IMMEDIATE transaction
+// migrations bring a database created by an older version up to schema.
+// Each one runs only when its column is missing.
+var migrations = []struct{ table, column, ddl string }{
+	{"entries", "cost", `ALTER TABLE entries ADD COLUMN cost INTEGER NOT NULL DEFAULT 0`},
+}
+
+// initSchema creates the tables, and adds the columns an older database
+// lacks, inside a BEGIN IMMEDIATE transaction
 // (_txlock=immediate): the write lock is taken up front, under busy_timeout,
 // instead of being upgraded from a read lock, which SQLite fails immediately
 // with SQLITE_BUSY when another process is initialising the same file.
@@ -138,6 +147,20 @@ func initSchema(db *sql.DB) error {
 		_ = tx.Rollback()
 		return err
 	}
+	for _, m := range migrations {
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, m.table, m.column).Scan(&n); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		if _, err := tx.Exec(m.ddl); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -148,9 +171,9 @@ func (c *Cache) Close() error { return c.db.Close() }
 func (c *Cache) Get(tokenID, key string) (e Entry, ok bool, err error) {
 	var fetched int64
 	err = c.db.QueryRow(
-		`SELECT body, etag, last_modified, fetched_at, via FROM entries WHERE token_id = ? AND key = ?`,
+		`SELECT body, etag, last_modified, fetched_at, via, cost FROM entries WHERE token_id = ? AND key = ?`,
 		tokenID, key,
-	).Scan(&e.Body, &e.ETag, &e.LastModified, &fetched, &e.Via)
+	).Scan(&e.Body, &e.ETag, &e.LastModified, &fetched, &e.Via, &e.Cost)
 	if err == sql.ErrNoRows {
 		return Entry{}, false, nil
 	}
@@ -168,12 +191,12 @@ func (c *Cache) Put(tokenID, key string, e Entry) error {
 		body = []byte{}
 	}
 	_, err := c.db.Exec(
-		`INSERT INTO entries (token_id, key, body, etag, last_modified, fetched_at, via)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO entries (token_id, key, body, etag, last_modified, fetched_at, via, cost)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (token_id, key) DO UPDATE SET
 		   body = excluded.body, etag = excluded.etag, last_modified = excluded.last_modified,
-		   fetched_at = excluded.fetched_at, via = excluded.via`,
-		tokenID, key, body, e.ETag, e.LastModified, e.FetchedAt.UnixNano(), e.Via,
+		   fetched_at = excluded.fetched_at, via = excluded.via, cost = excluded.cost`,
+		tokenID, key, body, e.ETag, e.LastModified, e.FetchedAt.UnixNano(), e.Via, e.Cost,
 	)
 	if err != nil {
 		return fmt.Errorf("cache: put: %w", err)

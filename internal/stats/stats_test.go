@@ -32,13 +32,14 @@ func TestCompute_SavingsFormula(t *testing.T) {
 		{Name: "ratelimit_hit", Hour: h(0), N: 1},
 		{Name: "throttle", Hour: h(0), N: 2},
 		{Name: "graphql_points", Hour: h(0), N: 99}, // spent, not saved
-		{Name: "cache_hit", Hour: h(3), N: 1000},    // outside a 3h window
+		{Name: "graphql_points_saved", Hour: h(2), N: 6},
+		{Name: "cache_hit", Hour: h(3), N: 1000}, // outside a 3h window
 	}
 	snap := map[string]quota.Bucket{"core": {Remaining: 4000, Limit: 5000, Known: true}}
 
 	r := Compute(buckets, snap, 3*time.Hour)
 
-	want := Saved{Cache: 40, ETag304: 10, Dedup: 4, WaitVsPoll: 16, RESTSaved: 70, TotalCalls: 80}
+	want := Saved{Cache: 40, ETag304: 10, Dedup: 4, WaitVsPoll: 16, RESTSaved: 70, TotalCalls: 80, GraphQLPointsSaved: 6}
 	if r.Saved != want {
 		t.Errorf("Saved = %+v, want %+v", r.Saved, want)
 	}

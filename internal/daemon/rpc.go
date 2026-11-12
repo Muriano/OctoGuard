@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/Muriano/OctoGuard/internal/gh"
@@ -76,18 +77,28 @@ func stateDir() (string, error) {
 }
 
 // socketPath is $XDG_RUNTIME_DIR/octoguard.sock, or the state directory when
-// XDG_RUNTIME_DIR is unset or missing.
+// XDG_RUNTIME_DIR is unset, missing or not private to the user (a shared
+// directory would let another user plant a socket and receive the token).
 func socketPath() (string, error) {
-	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" {
-		if st, err := os.Stat(d); err == nil && st.IsDir() {
-			return filepath.Join(d, "octoguard.sock"), nil
-		}
+	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" && privateDir(d) {
+		return filepath.Join(d, "octoguard.sock"), nil
 	}
 	dir, err := stateDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "octoguard.sock"), nil
+}
+
+// privateDir reports whether dir is a directory owned by the current user and
+// not writable by group or others.
+func privateDir(dir string) bool {
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() || st.Mode().Perm()&0o022 != 0 {
+		return false
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	return ok && int(sys.Uid) == os.Getuid()
 }
 
 func lockPath(dir string) string { return filepath.Join(dir, "octoguard.lock") }

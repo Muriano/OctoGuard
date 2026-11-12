@@ -357,6 +357,20 @@ func TestDaemon_SocketPerms0600(t *testing.T) {
 	}
 }
 
+func TestSocketPath_IgnoresSharedRuntimeDir(t *testing.T) {
+	runtimeDir, state := isolate(t)
+	if err := os.Chmod(runtimeDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	got, err := socketPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(state, "octoguard.sock"); got != want {
+		t.Errorf("socketPath = %s, want %s for a world-writable XDG_RUNTIME_DIR", got, want)
+	}
+}
+
 func TestDaemon_TokenNotPersisted(t *testing.T) {
 	_, state := isolate(t)
 	srv := fakegh.New(t)

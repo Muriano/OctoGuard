@@ -2,6 +2,7 @@ package cache
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -293,5 +294,50 @@ func TestCache_PathWithSpace(t *testing.T) {
 	}
 	if !exists(t, c, "tok", "k") {
 		t.Fatal("entry not readable")
+	}
+}
+
+func TestCache_CostRoundTrip(t *testing.T) {
+	c, _ := openTemp(t)
+	const key = "github.com/o/r/issue/1/issue@graphql"
+	if err := c.Put("tok", key, Entry{Body: []byte("a"), Via: "graphql", Cost: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := c.Get("tok", key); got.Cost != 3 {
+		t.Fatalf("Cost = %d, want 3", got.Cost)
+	}
+	if err := c.Put("tok", key, Entry{Body: []byte("b"), Via: "graphql", Cost: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := c.Get("tok", key); got.Cost != 5 {
+		t.Fatalf("Cost after overwrite = %d, want 5", got.Cost)
+	}
+}
+
+func TestCache_MigratesEntriesWithoutCost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.db")
+	old, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = old.Exec(`CREATE TABLE entries (
+		token_id TEXT NOT NULL, key TEXT NOT NULL, body BLOB NOT NULL, etag TEXT NOT NULL,
+		last_modified TEXT NOT NULL, fetched_at INTEGER NOT NULL, via TEXT NOT NULL,
+		PRIMARY KEY (token_id, key)) WITHOUT ROWID;
+		INSERT INTO entries VALUES ('tok', 'k', x'61', '', '', 0, 'graphql');`)
+	_ = old.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // the migration is idempotent
+		c, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open #%d: %v", i, err)
+		}
+		got, ok, err := c.Get("tok", "k")
+		_ = c.Close()
+		if err != nil || !ok || got.Cost != 0 || string(got.Body) != "a" {
+			t.Fatalf("Open #%d: Get = %+v ok=%v err=%v", i, got, ok, err)
+		}
 	}
 }

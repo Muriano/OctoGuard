@@ -42,7 +42,10 @@ const (
 	CounterETag304       = "etag_304"       // a conditional REST request answered 304
 	CounterRESTCall      = "rest_call"      // a REST request not answered 304
 	CounterGraphQLPoints = "graphql_points" // GraphQL points spent
-	CounterRateLimitHit  = "ratelimit_hit"  // a response refused for rate limiting
+	// CounterGraphQLPointsSaved is the cost of a GraphQL entry served from
+	// the cache, i.e. the GraphQL points a new query would have spent.
+	CounterGraphQLPointsSaved = "graphql_points_saved"
+	CounterRateLimitHit       = "ratelimit_hit" // a response refused for rate limiting
 	// CounterThrottle counts the times the governor slowed a caller down
 	// before the quota ran out (a rate limit avoided).
 	CounterThrottle = "throttle"
@@ -148,17 +151,24 @@ func (c *Client) Get(ctx context.Context, r ref.Ref, what Resource, opt GetOpts)
 	rd := &read{c: c, ctx: ctx, scope: Scope(r.Host, c.tok), opt: opt}
 	via := route.REST
 	if key := primaryKey(r, what); key != "" {
-		// A GraphQL entry also counts as cached: the next read moves to
-		// REST, whose ETags make later revalidations free.
-		cached := false
-		for _, k := range []string{key, graphQLKey(r, what)} {
-			_, ok, err := c.cache.Get(rd.scope, k)
-			if err != nil {
-				return Result{}, err
-			}
-			cached = cached || ok
+		_, restOK, err := c.cache.Get(rd.scope, key)
+		if err != nil {
+			return Result{}, err
 		}
-		via = route.Choose(what, cached, c.gov.Snapshot(rd.scope))
+		gql, gqlOK, err := c.cache.Get(rd.scope, graphQLKey(r, what))
+		if err != nil {
+			return Result{}, err
+		}
+		if gqlOK && !restOK && rd.fresh(gql) {
+			// Only a GraphQL entry, young enough for MaxAge: serve it from
+			// the cache. A REST entry, when present, wins: it revalidates
+			// for free with its ETag.
+			via = route.GraphQL
+		} else {
+			// A stale GraphQL entry also counts as cached: the read moves
+			// to REST, whose ETags make later revalidations free.
+			via = route.Choose(what, restOK || gqlOK, c.gov.Snapshot(rd.scope))
+		}
 	}
 	var data []byte
 	var err error
@@ -293,8 +303,9 @@ func (rd *read) rest(key, path string) ([]byte, error) {
 }
 
 // graphQL runs query, normalizes its data with normalize and caches the
-// result under key. GraphQL has no ETags: a cached result is only reused
-// within MaxAge, or while the governor holds GraphQL requests.
+// result under key with the query's cost. GraphQL has no ETags: a cached
+// result is only reused within MaxAge, which counts its cost as GraphQL
+// points saved, or while the governor holds GraphQL requests.
 func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(data []byte) ([]byte, error)) ([]byte, error) {
 	c := rd.c
 	e, ok, err := c.cache.Get(rd.scope, key)
@@ -302,6 +313,7 @@ func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(d
 		return nil, err
 	}
 	if ok && rd.fresh(e) {
+		rd.count(CounterGraphQLPointsSaved, e.Cost)
 		return rd.serveCached(e), nil
 	}
 	if wait := c.gov.Allow(rd.scope, "graphql", 1); wait > 0 {
@@ -369,7 +381,7 @@ func (rd *read) graphQL(key, query string, vars map[string]any, normalize func(d
 		return nil, err
 	}
 	now := c.now()
-	if err := c.cache.Put(rd.scope, key, cache.Entry{Body: data, FetchedAt: now, Via: string(route.GraphQL)}); err != nil {
+	if err := c.cache.Put(rd.scope, key, cache.Entry{Body: data, FetchedAt: now, Via: string(route.GraphQL), Cost: points}); err != nil {
 		return nil, err
 	}
 	rd.note(now, true, false)

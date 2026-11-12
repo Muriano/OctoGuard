@@ -64,10 +64,9 @@ type Saved struct {
 	TotalCalls int64 `json:"total_calls"`
 	// RESTSaved is every avoided request, counted as one REST call each.
 	RESTSaved int64 `json:"rest_saved"`
-	// GraphQLPointsSaved is the GraphQL points avoided. It is 0: the router
-	// sends every cached read to REST, GraphQL entries included, so every
-	// cache hit and 304 is a REST read and RESTSaved already counts it.
-	// See https://github.com/Muriano/OctoGuard/issues/32.
+	// GraphQLPointsSaved is the GraphQL points avoided: the cost of every
+	// GraphQL entry served from the cache. Such a read is also a cache hit,
+	// so Cache and RESTSaved count it as one request as well.
 	GraphQLPointsSaved int64 `json:"graphql_points_saved"`
 }
 
@@ -127,6 +126,8 @@ func Compute(buckets []cache.Bucket, snap map[string]quota.Bucket, since time.Du
 		case CounterWaitSaved:
 			r.Saved.WaitVsPoll += b.N
 			p.Avoided += b.N
+		case gh.CounterGraphQLPointsSaved:
+			r.Saved.GraphQLPointsSaved += b.N
 		case gh.CounterRESTCall:
 			p.Real += b.N
 		case gh.CounterRateLimitHit:

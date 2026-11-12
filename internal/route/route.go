@@ -45,6 +45,8 @@ var graphQLCapable = map[Resource]bool{PR: true, Issue: true, Reviews: true, Com
 // REST is chosen when the resource is cached or GraphQL has less than 20%
 // left; GraphQL when the read is composite (PR) and not cached, or when REST
 // has less than 20% left. Resources GraphQL cannot serve always go to REST.
+// The gh client does not ask when it can serve a GraphQL entry that is still
+// within the read's MaxAge straight from the cache.
 func Choose(what Resource, cached bool, snap map[string]quota.Bucket) Via {
 	if !graphQLCapable[what] {
 		return REST

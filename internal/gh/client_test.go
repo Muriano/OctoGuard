@@ -398,3 +398,79 @@ func TestGet_GovernorHoldCountsThrottle(t *testing.T) {
 		t.Errorf("throttle = %d, want 1", got)
 	}
 }
+
+// setIssueGraphQL makes core low, so an uncached Issue read goes through
+// GraphQL, and answers it with a query that costs 3 points.
+func setIssueGraphQL(e *env) {
+	e.srv.SetRate("core", 500, 5000, time.Now().Add(time.Hour))
+	e.srv.SetResource(issuePath, []byte(`{"number":1,"state":"open"}`), `"i1"`)
+	e.srv.SetResource("/repos/o/r/issues/1/comments", []byte(`[]`), `"c1"`)
+	e.srv.SetResource("/graphql", []byte(`{"data":{"rateLimit":{"cost":3},"repository":{"issue":{
+		"number":1,"title":"bug","state":"OPEN","author":{"login":"ana"},"labels":{"nodes":[]}}}}}`), "")
+}
+
+func TestGet_ServesFreshGraphQLEntryAndCountsPointsSaved(t *testing.T) {
+	e := newEnv(t)
+	setIssueGraphQL(e)
+	e.get(t, issueRef, Comments, GetOpts{}) // a REST response reports the low core bucket
+
+	if res := e.get(t, issueRef, Issue, GetOpts{}); res.Via != "graphql" {
+		t.Fatalf("first read Via = %s, want graphql", res.Via)
+	}
+	res := e.get(t, issueRef, Issue, GetOpts{MaxAge: time.Hour})
+	if res.Via != "graphql" || !res.FromCache {
+		t.Fatalf("second read = %+v, want graphql served from the cache", res)
+	}
+	if got := e.srv.GraphQLCalls(); got != 1 {
+		t.Errorf("GraphQLCalls = %d, want 1", got)
+	}
+	if got := e.srv.Calls(issuePath); got != 0 {
+		t.Errorf("REST issue calls = %d, want 0", got)
+	}
+	if got := e.counter(t, CounterGraphQLPointsSaved); got != 3 {
+		t.Errorf("graphql_points_saved = %d, want 3", got)
+	}
+	if got := e.counter(t, CounterCacheHit); got != 1 {
+		t.Errorf("cache_hit = %d, want 1", got)
+	}
+}
+
+func TestGet_StaleOrFreshGraphQLEntryRevalidatesViaREST(t *testing.T) {
+	for name, opt := range map[string]GetOpts{
+		"no max age":      {},
+		"older than max":  {MaxAge: time.Minute},
+		"fresh requested": {Fresh: true, MaxAge: time.Hour},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			setIssueGraphQL(e)
+			e.get(t, issueRef, Comments, GetOpts{})
+			e.get(t, issueRef, Issue, GetOpts{})
+			later := time.Now().Add(10 * time.Minute)
+			e.c.now = func() time.Time { return later }
+
+			if res := e.get(t, issueRef, Issue, opt); res.Via != "rest" {
+				t.Fatalf("second read Via = %s, want rest", res.Via)
+			}
+			if got := e.counter(t, CounterGraphQLPointsSaved); got != 0 {
+				t.Errorf("graphql_points_saved = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestGet_RESTEntryWinsOverFreshGraphQLEntry(t *testing.T) {
+	e := newEnv(t)
+	setPR(e.srv)
+	e.srv.SetResource("/graphql", []byte(`{"data":{"rateLimit":{"cost":2},"repository":{"pullRequest":{"number":2,"state":"OPEN","headRefOid":"abc"}}}}`), "")
+
+	e.get(t, prRef, PR, GetOpts{}) // GraphQL
+	e.get(t, prRef, PR, GetOpts{}) // REST, fills the ETags
+	res := e.get(t, prRef, PR, GetOpts{MaxAge: time.Hour})
+	if res.Via != "rest" || !res.FromCache {
+		t.Fatalf("third read = %+v, want REST served from the cache", res)
+	}
+	if got := e.counter(t, CounterGraphQLPointsSaved); got != 0 {
+		t.Errorf("graphql_points_saved = %d, want 0", got)
+	}
+}

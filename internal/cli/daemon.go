@@ -128,13 +128,14 @@ func printDaemon(cmd *cobra.Command, running bool, st daemon.Status) error {
 			_, err = fmt.Fprintln(out, "daemon: not running")
 			return err
 		}
-		_, err = fmt.Fprintf(out, "daemon: running pid=%d version=%s since=%s connections=%d\n",
-			st.PID, st.Version, st.StartedAt.Format(time.RFC3339), st.Connections)
+		_, err = fmt.Fprintf(out, "daemon: running pid=%d version=%s since=%s connections=%d pollers=%d waiters=%d\n",
+			st.PID, st.Version, st.StartedAt.Format(time.RFC3339), st.Connections, st.Pollers, st.Waiters)
 		return err
 	}
 	v := map[string]any{"schema_version": 1, "running": running}
 	if running {
 		v["pid"], v["version"], v["started_at"], v["connections"] = st.PID, st.Version, st.StartedAt, st.Connections
+		v["pollers"], v["waiters"] = st.Pollers, st.Waiters
 	}
 	return json.NewEncoder(out).Encode(v)
 }

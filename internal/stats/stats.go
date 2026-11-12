@@ -134,11 +134,11 @@ func Compute(buckets []cache.Bucket, snap map[string]quota.Bucket, since time.Du
 	}
 
 	r.Saved.RESTSaved = r.Saved.Cache + r.Saved.ETag304 + r.Saved.Dedup + r.Saved.WaitVsPoll
-	var real int64
+	var realCalls int64
 	for _, p := range r.Hourly {
-		real += p.Real
+		realCalls += p.Real
 	}
-	r.Saved.TotalCalls = real + r.Saved.RESTSaved
+	r.Saved.TotalCalls = realCalls + r.Saved.RESTSaved
 	return r
 }
 

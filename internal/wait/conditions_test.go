@@ -24,7 +24,8 @@ func TestChecksGreen_NoRequiredChecksUsesAll(t *testing.T) {
 		{"all success", []gh.Check{done("a", "success"), done("b", "success")}, true},
 		{"one still running", []gh.Check{done("a", "success"), check("b", "in_progress", "")}, false},
 		{"one queued", []gh.Check{check("a", "queued", "")}, false},
-		{"no checks at all", []gh.Check{}, true},
+		// No check reported yet: CI may not have registered them (#38).
+		{"no checks at all", []gh.Check{}, false},
 	} {
 		cur := Snapshot{Checks: tc.checks}
 		if met, _ := Evaluate(ChecksGreen, cur, cur); met != tc.met {
@@ -33,6 +34,13 @@ func TestChecksGreen_NoRequiredChecksUsesAll(t *testing.T) {
 		if Failed(ChecksGreen, cur) {
 			t.Errorf("%s: Failed = true", tc.name)
 		}
+	}
+}
+
+func TestChecksDone_NoChecksIsNotMet(t *testing.T) {
+	cur := Snapshot{Checks: []gh.Check{}}
+	if met, _ := Evaluate(ChecksDone, cur, cur); met {
+		t.Error("checks-done met with no checks reported")
 	}
 }
 

@@ -375,6 +375,9 @@ func notGreen(s wait.Snapshot, failed bool) string {
 		what = "checks failed"
 	}
 	if len(bad) == 0 {
+		if len(s.Checks) == 0 {
+			return what + ": no checks reported yet"
+		}
 		return what
 	}
 	return what + ": " + strings.Join(bad, ", ")

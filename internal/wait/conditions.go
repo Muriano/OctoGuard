@@ -84,20 +84,23 @@ type Item struct {
 // Snapshot is the normalized state of a resource at one point in time. Only
 // the parts read for the waiters' conditions are set.
 type Snapshot struct {
-	State      string     `json:"state,omitempty"` // open or closed
-	Merged     bool       `json:"merged,omitempty"`
-	Labels     []string   `json:"labels,omitempty"`
-	Reviews    []Item     `json:"reviews,omitempty"`
-	Comments   []Item     `json:"comments,omitempty"`
-	Checks     []gh.Check `json:"checks,omitempty"`
-	Required   []string   `json:"required_checks,omitempty"`
-	RunStatus  string     `json:"run_status,omitempty"`
-	Conclusion string     `json:"run_conclusion,omitempty"`
+	State  string `json:"state,omitempty"` // open or closed
+	Merged bool   `json:"merged,omitempty"`
+	// MergeableState is GitHub's verdict on merging a PR (clean, blocked,
+	// unstable, behind, dirty, draft, ...); "" or "unknown" while computing.
+	MergeableState string     `json:"mergeable_state,omitempty"`
+	Labels         []string   `json:"labels,omitempty"`
+	Reviews        []Item     `json:"reviews,omitempty"`
+	Comments       []Item     `json:"comments,omitempty"`
+	Checks         []gh.Check `json:"checks,omitempty"`
+	Required       []string   `json:"required_checks,omitempty"`
+	RunStatus      string     `json:"run_status,omitempty"`
+	Conclusion     string     `json:"run_conclusion,omitempty"`
 }
 
 // Change is one difference between two snapshots.
 type Change struct {
-	Kind string `json:"kind"` // state, merged, label, review, comment, check, run
+	Kind string `json:"kind"` // state, merged, mergeable_state, label, review, comment, check, run
 	Name string `json:"name,omitempty"`
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
@@ -161,16 +164,17 @@ func BuildSnapshot(parts map[gh.Resource]json.RawMessage) (Snapshot, error) {
 
 func (s *Snapshot) setIssue(data json.RawMessage) error {
 	var is struct {
-		State  string `json:"state"`
-		Merged bool   `json:"merged"`
-		Labels []struct {
+		State          string `json:"state"`
+		Merged         bool   `json:"merged"`
+		MergeableState string `json:"mergeable_state"`
+		Labels         []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
 	}
 	if err := json.Unmarshal(data, &is); err != nil {
 		return err
 	}
-	s.State, s.Merged = is.State, is.Merged
+	s.State, s.Merged, s.MergeableState = is.State, is.Merged, is.MergeableState
 	s.Labels = []string{}
 	for _, l := range is.Labels {
 		s.Labels = append(s.Labels, l.Name)
@@ -296,6 +300,10 @@ func diff(prev, cur Snapshot) []Change {
 	}
 	if !prev.Merged && cur.Merged {
 		add("merged", "", "false", "true")
+	}
+	if known := func(s string) bool { return s != "" && s != "unknown" }; known(prev.MergeableState) &&
+		known(cur.MergeableState) && prev.MergeableState != cur.MergeableState {
+		add("mergeable_state", "", prev.MergeableState, cur.MergeableState)
 	}
 	for _, l := range cur.Labels {
 		if !slices.Contains(prev.Labels, l) {

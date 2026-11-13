@@ -31,7 +31,7 @@ func decodeWrite(t *testing.T, stdout string) writeOutput {
 	return w
 }
 
-func TestMergeCLI_RejectsWhenChecksRedExit4(t *testing.T) {
+func TestMergeCLI_GitHubRefusalExit4(t *testing.T) {
 	isolate(t)
 	srv := fakegh.New(t)
 	srv.SetResource("/repos/o/r/pulls/1", []byte(`{"number":1,"head":{"sha":"abc"},"base":{"ref":"main"}}`), `"p"`)
@@ -40,7 +40,7 @@ func TestMergeCLI_RejectsWhenChecksRedExit4(t *testing.T) {
 	srv.SetResource("/repos/o/r/commits/abc/status", []byte(`{"statuses":[]}`), `"s"`)
 	srv.SetResource("/repos/o/r/branches/main", []byte(`{"protection":{}}`), `"b"`)
 	srv.SetResource("/repos/o/r/rules/branches/main", []byte(`[]`), `"r"`)
-	srv.SetResponse("PUT", "/repos/o/r/pulls/1/merge", 200, []byte(`{"merged":true}`))
+	srv.SetResponse("PUT", "/repos/o/r/pulls/1/merge", 405, []byte(`{"message":"Pull Request is not mergeable"}`))
 	setDial(t, noDaemon)
 
 	stdout, stderr, err := run(t, "--api-url", srv.URL, "pr", "merge", "o/r#1", "--squash")
@@ -48,12 +48,9 @@ func TestMergeCLI_RejectsWhenChecksRedExit4(t *testing.T) {
 		t.Fatalf("err = %v, want ErrMergeRejected (stderr %q)", err, stderr)
 	}
 	w := decodeWrite(t, stdout)
-	if w.SchemaVersion != 1 || w.Status != "rejected" || !strings.Contains(w.Reason, "ci=failure") ||
-		w.Hint != "octoguard wait pr o/r#1 --until checks-green" {
+	if w.SchemaVersion != 1 || w.Status != "rejected" || !strings.Contains(w.Reason, "not mergeable") ||
+		w.Hint != "octoguard wait pr o/r#1 --until changed" {
 		t.Fatalf("unexpected output: %s", stdout)
-	}
-	if n := srv.Calls("/repos/o/r/pulls/1/merge"); n != 0 {
-		t.Fatalf("merge endpoint called %d times", n)
 	}
 }
 

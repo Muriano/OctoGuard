@@ -330,7 +330,7 @@ const gqlChecks = `commits(last: 1) { nodes { commit { oid statusCheckRollup { c
 	... on StatusContext { context state }
 } } } } } }`
 
-const gqlPull = `number title body state isDraft merged mergeable url createdAt updatedAt closedAt mergedAt
+const gqlPull = `number title body state isDraft merged mergeable mergeStateStatus url createdAt updatedAt closedAt mergedAt
 	headRefName headRefOid baseRefName ` + gqlUser + ` labels(first: 100) { nodes { name } }`
 
 const gqlHead = `query($owner: String!, $repo: String!, $number: Int!) { rateLimit { cost } repository(owner: $owner, name: $repo) { `
@@ -383,6 +383,7 @@ type gqlRepo struct {
 			IsDraft     bool      `json:"isDraft"`
 			Merged      bool      `json:"merged"`
 			Mergeable   string    `json:"mergeable"`
+			MergeState  string    `json:"mergeStateStatus"`
 			URL         string    `json:"url"`
 			CreatedAt   string    `json:"createdAt"`
 			UpdatedAt   string    `json:"updatedAt"`
@@ -519,7 +520,7 @@ func normalizeGraphQL(r ref.Ref, what Resource, data []byte) ([]byte, error) {
 	}
 	pull := map[string]any{
 		"number": p.Number, "title": p.Title, "body": p.Body, "state": state, "draft": p.IsDraft,
-		"merged": p.Merged, "mergeable": mergeable, "html_url": p.URL,
+		"merged": p.Merged, "mergeable": mergeable, "mergeable_state": strings.ToLower(p.MergeState), "html_url": p.URL,
 		"created_at": p.CreatedAt, "updated_at": p.UpdatedAt, "closed_at": p.ClosedAt, "merged_at": p.MergedAt,
 		"user": user(p.Author), "labels": labels(p.Labels),
 		"head": map[string]string{"ref": p.HeadRefName, "sha": p.HeadRefOid},

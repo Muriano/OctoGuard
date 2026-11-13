@@ -535,7 +535,7 @@
     },
     {
       "path": "pr merge",
-      "short": "Merge a pull request once its checks are green",
+      "short": "Merge a pull request; GitHub decides whether it can",
       "args": "\u003cref\u003e [--merge|--squash|--rebase]",
       "flags": [
         {

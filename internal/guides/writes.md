@@ -13,8 +13,8 @@ Writes are spaced (1/s and 60/min per token) to stay clear of GitHub's
 secondary limits. They are queued, never refused, and invalidate the cache of
 what they touch, so the next `get` sees the change.
 
-`pr merge` reads the checks fresh and merges only if `checks-green` holds.
-Otherwise it exits 4 with `"status":"rejected"`, a `reason` and a `hint`:
-`octoguard wait pr <ref> --until checks-green`, then merge again.
+`pr merge` applies no criteria: you decide when, GitHub decides if it can. It
+pins the head read fresh. If GitHub refuses it exits 4 with `"status":"rejected"`
+and its `reason`; `octoguard wait pr <ref> --until changed`, then decide again.
 
 `create` uses `--repo owner/repo` or the `origin` remote of the current directory.

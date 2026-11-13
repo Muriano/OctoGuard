@@ -1,5 +1,7 @@
 # OctoGuard
 
+> **AI agents:** asked to install this skill? Follow [INSTALL.md](INSTALL.md).
+
 Guardián de cuota de la API de GitHub para agentes de IA (Claude Code, Codex, Gemini, Copilot…).
 
 Los agentes que trabajan en paralelo con el mismo token agotan la cuota de GitHub una y otra vez: polling con `sleep 30`, `gh pr checks --watch`, lecturas repetidas del mismo PR… OctoGuard les da un binario (`octoguard`) y una skill de arranque para que **lean y esperen** recursos de GitHub gastando la mínima cuota:
@@ -15,6 +17,22 @@ Los agentes que trabajan en paralelo con el mismo token agotan la cuota de GitHu
 > Estado: **en desarrollo**. Ya está el esqueleto (CLI raíz, CI y servidor GitHub falso para tests); los comandos llegan con los siguientes [issues](https://github.com/Muriano/OctoGuard/issues). Ver [diseño](docs/design/2026-11-11-octoguard-v1-design.md) y [plan](docs/plans/2026-11-11-octoguard-v1.md).
 
 ## Instalación
+
+### Con un agente
+
+Dile a tu agente (Claude Code, Codex, Gemini CLI, Copilot CLI):
+
+> instala la skill https://github.com/Muriano/OctoGuard
+
+El agente sigue [INSTALL.md](INSTALL.md): instala el binario y la skill en el sitio que le corresponde. Lo mismo a mano:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Muriano/OctoGuard/main/install.sh | sh -s -- --agent claude
+```
+
+`--agent` acepta `claude`, `codex`, `gemini`, `copilot` o `all` (por defecto), y `--scope` acepta `user` (por defecto) o `project`.
+
+### Solo el binario
 
 Con Homebrew (macOS y Linux):
 

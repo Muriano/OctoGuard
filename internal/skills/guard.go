@@ -19,7 +19,9 @@ func Guard(command string) (deny bool, reason string) {
 	return false, ""
 }
 
-var segmentSep = regexp.MustCompile("&&|\\|\\||[;|&\n`]|\\$\\(")
+// heredoc matches a here-document operator (not a <<< here-string) and
+// captures its delimiter word.
+var heredoc = regexp.MustCompile(`(?:^|[^<])<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
 
 // shellWords are keywords and wrappers that can precede a command.
 var shellWords = map[string]bool{
@@ -28,11 +30,11 @@ var shellWords = map[string]bool{
 }
 
 // ghInvocations returns the arguments of every gh command in a shell command
-// line. It splits on shell separators and skips keywords and VAR=value
-// prefixes; it is a heuristic, not a shell parser.
+// line. It splits on shell separators (see segments) and skips keywords and
+// VAR=value prefixes; it is a heuristic, not a shell parser.
 func ghInvocations(command string) [][]string {
 	var out [][]string
-	for _, seg := range segmentSep.Split(command, -1) {
+	for _, seg := range segments(command) {
 		words := strings.Fields(strings.TrimLeft(strings.TrimSpace(seg), "({"))
 		for len(words) > 0 && (shellWords[words[0]] || isAssignment(words[0])) {
 			words = words[1:]
@@ -46,6 +48,72 @@ func ghInvocations(command string) [][]string {
 		}
 	}
 	return out
+}
+
+// segments splits a command line where a new command can start: ; | & and
+// newlines outside quotes, and the start of a $( or backtick substitution
+// (which runs even inside double quotes). Single-quoted text and heredoc
+// bodies are data, never commands, so they are kept whole.
+func segments(command string) []string {
+	var segs []string
+	var cur strings.Builder
+	cut := func() {
+		segs = append(segs, cur.String())
+		cur.Reset()
+	}
+	s := dropHeredocBodies(command)
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case c == '\\' && i+1 < len(s):
+			cur.WriteByte(c)
+			i++
+			c = s[i]
+		case c == '`':
+			cut()
+			continue
+		case c == '$' && i+1 < len(s) && s[i+1] == '(':
+			i++
+			cut()
+			continue
+		case quote == '"':
+			if c == '"' {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == ';' || c == '|' || c == '&' || c == '\n':
+			cut()
+			continue
+		}
+		cur.WriteByte(c)
+	}
+	cut()
+	return segs
+}
+
+// dropHeredocBodies removes the body lines of every here-document: they are
+// input data, not commands.
+func dropHeredocBodies(command string) string {
+	var out, ends []string
+	for _, line := range strings.Split(command, "\n") {
+		if len(ends) > 0 {
+			if strings.TrimSpace(line) == ends[0] {
+				ends = ends[1:]
+			}
+			continue
+		}
+		out = append(out, line)
+		for _, m := range heredoc.FindAllStringSubmatch(line, -1) {
+			ends = append(ends, m[1])
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func isAssignment(w string) bool {

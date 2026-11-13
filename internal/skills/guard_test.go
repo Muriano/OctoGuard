@@ -34,6 +34,11 @@ func TestGuard_Blocks(t *testing.T) {
 		{"cd repo; /opt/homebrew/bin/gh pr merge 1", "octoguard pr merge"},
 		{"echo ok\ngh issue view 2", "octoguard get issue"},
 		{"(cd repo && gh pr view 1)", "octoguard get pr"},
+		// Substitutions run even inside double quotes.
+		{`state="$(gh pr view 1 --json state)"`, "octoguard get pr"},
+		{"echo \"`gh pr view 1`\"", "octoguard get pr"},
+		// A heredoc does not hide the commands after it.
+		{"cat <<'EOF' > f\ntext\nEOF\ngh pr merge 1", "octoguard pr merge"},
 	} {
 		deny, reason := Guard(tc.cmd)
 		if !deny || !strings.Contains(reason, tc.want) {
@@ -58,6 +63,12 @@ func TestGuard_Allows(t *testing.T) {
 		"grep 'gh pr view' notes.md",
 		"octoguard get pr 1",
 		"ghq get x",
+		// Text that mentions gh is not a gh command: single quotes and quoted
+		// heredoc bodies never run, even with Markdown backticks inside.
+		"octoguard issue create --title t --body 'run `gh pr view` instead; then gh pr merge'",
+		"git commit -m \"$(cat <<'EOF'\nUse gh pr view and `gh run watch` here.\ngh pr merge 1\nEOF\n)\"",
+		"cat > notes.md <<EOF\ngh pr checks 1 --watch\nEOF\necho done",
+		"echo \"see gh pr view; and gh run watch\"",
 	} {
 		if deny, reason := Guard(cmd); deny {
 			t.Errorf("Guard(%q) denied: %s", cmd, reason)

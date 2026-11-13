@@ -46,7 +46,9 @@ octoguard skills install --agent claude --scope user --enforce
 
 ## 3. Check and report
 
-- The last lines print `<agent>  installed|updated  <path to SKILL.md>`.
+- The last lines print `<agent>  <action>  <path>`, with action `installed`,
+  `updated` or `unchanged` (for `SKILL.md`, and with `--enforce` for
+  `CLAUDE.md` and `settings.json`).
   `skipped_unmanaged` means a `SKILL.md` not written by octoguard already exists
   there; it was left untouched, so tell the user.
 - If the script says the bin directory is not in `PATH`, tell the user to add it.

@@ -45,7 +45,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-El workflow `release.yml` ejecuta los tests y goreleaser. Publica los binarios y los checksums en la release de GitHub y actualiza la fórmula en `Muriano/homebrew-tap`.
+El workflow `release.yml` ejecuta los tests y goreleaser. Publica los binarios y los checksums en la release de GitHub y actualiza el cask en `Muriano/homebrew-tap` (`Casks/octoguard.rb`).
 
 ## Desarrollo
 

@@ -10,9 +10,9 @@ Conditions:
 The JSON has `status`: `met`, `failed` (it can no longer be met, e.g. a red
 check for `checks-green`) or `pending`, plus `changes` and the current `state`.
 
-`checks-done` and `checks-green` need at least one check: right after a push
-CI may not have registered its checks yet, so no checks keeps the wait going.
-On a repository without CI they never hold; use `--timeout`.
+`changed` also fires when GitHub's `mergeable_state` changes (e.g. `blocked` ->
+`clean`), whatever the repo's rules: read `state` and decide. `checks-*` need
+at least one check, so on a repo without CI wait for `changed` instead.
 
 `pending` means `--timeout` expired first: the exit code is 3 and it is not an
 error. Run the same command again. The daemon keeps polling for 2 minutes after

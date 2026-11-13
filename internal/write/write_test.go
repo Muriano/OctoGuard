@@ -116,69 +116,67 @@ func TestComment_InvalidatesComments(t *testing.T) {
 	}
 }
 
-func TestMerge_RejectsWhenChecksRed(t *testing.T) {
-	e := newEnv(t)
-	e.setPR(redRuns, `"red"`)
-	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+func TestMerge_DoesNotJudgeChecks(t *testing.T) {
+	// octoguard applies no criteria of its own: red checks or no checks, the
+	// merge goes to GitHub, which decides.
+	for _, runs := range []string{redRuns, `[]`} {
+		e := newEnv(t)
+		e.setPR(runs, `"x"`)
+		e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
 
-	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Status != StatusRejected || !strings.Contains(res.Reason, "ci=failure") ||
-		res.Hint != "octoguard wait pr o/r#2 --until checks-green" {
-		t.Fatalf("unexpected result %+v", res)
-	}
-	if n := e.srv.Calls(mergePath); n != 0 {
-		t.Fatalf("merge endpoint called %d times", n)
+		res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+		if err != nil || res.Status != StatusOK {
+			t.Fatalf("checks %s: Execute = %+v, %v", runs, res, err)
+		}
+		if n := e.srv.Calls(mergePath); n != 1 {
+			t.Fatalf("checks %s: merge endpoint called %d times", runs, n)
+		}
 	}
 }
 
-func TestMerge_RejectsWhenNoChecksYet(t *testing.T) {
-	e := newEnv(t)
-	e.setPR(`[]`, `"none"`)
-	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+func TestMerge_GitHubRefusalIsRejected(t *testing.T) {
+	for _, status := range []int{405, 409} {
+		e := newEnv(t)
+		e.setPR(greenRuns, `"g"`)
+		e.srv.SetResponse("PUT", mergePath, status, []byte(`{"message":"Pull Request is not mergeable"}`))
 
-	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Status != StatusRejected || !strings.Contains(res.Reason, "no checks reported yet") {
-		t.Fatalf("unexpected result %+v", res)
-	}
-	if n := e.srv.Calls(mergePath); n != 0 {
-		t.Fatalf("merge endpoint called %d times", n)
+		res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+		if err != nil {
+			t.Fatalf("%d: %v", status, err)
+		}
+		if res.Status != StatusRejected || !strings.Contains(res.Reason, "Pull Request is not mergeable") ||
+			res.Hint != "octoguard wait pr o/r#2 --until changed" {
+			t.Fatalf("%d: unexpected result %+v", status, res)
+		}
 	}
 }
 
-func TestMerge_FreshReadIgnoresCache(t *testing.T) {
+func TestMerge_PinsFreshHeadSHA(t *testing.T) {
 	e := newEnv(t)
 	e.setPR(greenRuns, `"green"`)
 	ctx := context.Background()
-	// Green checks are cached; a max-age read would serve them.
+	// The head abc is cached; a max-age read would serve it.
 	if _, err := e.w.Client.Get(ctx, prRef, gh.Checks, gh.GetOpts{MaxAge: time.Hour}); err != nil {
 		t.Fatal(err)
 	}
-	e.setPR(redRuns, `"red"`)
+	e.srv.SetResource("/repos/o/r/pulls/2", []byte(`{"number":2,"head":{"sha":"new"},"base":{"ref":"main"}}`), `"p2"`)
+	e.srv.SetResource("/repos/o/r/commits/new/check-runs", []byte(`{"check_runs":[]}`), `"n"`)
+	e.srv.SetResource("/repos/o/r/commits/new/status", []byte(`{"statuses":[]}`), `"ns"`)
 	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
-	runs := e.srv.Calls("/repos/o/r/commits/abc/check-runs")
 
-	res, err := e.w.Execute(ctx, Request{Op: PRMerge, Ref: prRef, Method: "merge"})
-	if err != nil {
+	if _, err := e.w.Execute(ctx, Request{Op: PRMerge, Ref: prRef, Method: "merge"}); err != nil {
 		t.Fatal(err)
 	}
-	if res.Status != StatusRejected {
-		t.Fatalf("merged on stale green checks: %+v", res)
+	var body map[string]string
+	if err := json.Unmarshal(e.srv.Body(mergePath), &body); err != nil {
+		t.Fatal(err)
 	}
-	if e.srv.Calls("/repos/o/r/commits/abc/check-runs") == runs {
-		t.Fatal("checks were not read from GitHub")
-	}
-	if e.srv.Calls(mergePath) != 0 {
-		t.Fatal("merge endpoint called")
+	if body["sha"] != "new" {
+		t.Fatalf("merged pinned to %q, want the fresh head new", body["sha"])
 	}
 }
 
-func TestMerge_GreenMergesPinnedToHeadSHA(t *testing.T) {
+func TestMerge_MergesPinnedToHeadSHA(t *testing.T) {
 	e := newEnv(t)
 	e.setPR(greenRuns, `"green"`)
 	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))

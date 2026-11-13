@@ -200,3 +200,32 @@ func TestBuildSnapshot(t *testing.T) {
 		t.Errorf("snapshot = %+v", s)
 	}
 }
+
+func TestChanged_MergeableState(t *testing.T) {
+	for _, tc := range []struct {
+		from, to string
+		met      bool
+	}{
+		{"blocked", "clean", true},
+		{"clean", "dirty", true},
+		{"unknown", "clean", false}, // GitHub was still computing it
+		{"", "clean", false},
+		{"clean", "unknown", false},
+		{"clean", "clean", false},
+	} {
+		prev, cur := Snapshot{State: "open", MergeableState: tc.from}, Snapshot{State: "open", MergeableState: tc.to}
+		met, changes := Evaluate(Changed, prev, cur)
+		if met != tc.met {
+			t.Errorf("%q -> %q: met = %t, want %t (%v)", tc.from, tc.to, met, tc.met, changes)
+		}
+	}
+}
+
+func TestBuildSnapshot_MergeableState(t *testing.T) {
+	s, err := BuildSnapshot(map[gh.Resource]json.RawMessage{
+		gh.PR: json.RawMessage(`{"pull":{"state":"open","mergeable_state":"clean"},"reviews":[],"checks":{"checks":[]}}`),
+	})
+	if err != nil || s.MergeableState != "clean" {
+		t.Fatalf("MergeableState = %q, %v", s.MergeableState, err)
+	}
+}

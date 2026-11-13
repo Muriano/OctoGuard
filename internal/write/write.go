@@ -6,18 +6,18 @@ package write
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/Muriano/OctoGuard/internal/cache"
 	"github.com/Muriano/OctoGuard/internal/gh"
 	"github.com/Muriano/OctoGuard/internal/ref"
-	"github.com/Muriano/OctoGuard/internal/wait"
 )
 
 // Op is a kind of write.
@@ -60,8 +60,8 @@ const (
 	StatusRejected = "rejected"
 )
 
-// Result is the outcome of a write. A merge refused because the checks are
-// not green is a Result with StatusRejected, not an error.
+// Result is the outcome of a write. A merge GitHub refuses is a Result with
+// StatusRejected, not an error.
 type Result struct {
 	Status string          `json:"status"`
 	Reason string          `json:"reason,omitempty"`
@@ -312,29 +312,16 @@ func (w *Writer) edit(ctx context.Context, req Request, repo string) (Result, er
 	return ok(data), nil
 }
 
-// merge reads the checks fresh and merges only when checks-green holds,
-// pinning the head SHA that was validated.
+// merge asks GitHub to merge: octoguard applies no criteria of its own, the
+// agent decides when to merge and GitHub decides whether it can. The head SHA
+// comes from a fresh read and is pinned, so a push in between is not merged
+// unseen. A refusal from GitHub (405 not mergeable, 409 head moved) is a
+// Result with StatusRejected.
 func (w *Writer) merge(ctx context.Context, req Request, repo string) (Result, error) {
 	r := req.Ref
-	fresh := gh.GetOpts{Fresh: true}
-	checks, err := w.Client.Get(ctx, r, gh.Checks, fresh)
+	checks, err := w.Client.Get(ctx, r, gh.Checks, gh.GetOpts{Fresh: true})
 	if err != nil {
 		return Result{}, err
-	}
-	required, err := w.Client.Get(ctx, r, gh.RequiredChecks, fresh)
-	if err != nil {
-		return Result{}, err
-	}
-	snap, err := wait.BuildSnapshot(map[gh.Resource]json.RawMessage{gh.Checks: checks.Data, gh.RequiredChecks: required.Data})
-	if err != nil {
-		return Result{}, err
-	}
-	if met, _ := wait.Evaluate(wait.ChecksGreen, wait.Snapshot{}, snap); !met {
-		return Result{
-			Status: StatusRejected,
-			Reason: notGreen(snap, wait.Failed(wait.ChecksGreen, snap)),
-			Hint:   fmt.Sprintf("octoguard wait pr %s/%s#%d --until checks-green", r.Owner, r.Repo, r.Number),
-		}, nil
 	}
 	var cd gh.ChecksData
 	if err := json.Unmarshal(checks.Data, &cd); err != nil {
@@ -345,42 +332,15 @@ func (w *Writer) merge(ctx context.Context, req Request, repo string) (Result, e
 		body["sha"] = cd.HeadSHA
 	}
 	data, err := w.do(ctx, "PUT", fmt.Sprintf("%s/pulls/%d/merge", repo, r.Number), body)
+	var apiErr *gh.APIError
+	if errors.As(err, &apiErr) && (apiErr.Status == http.StatusMethodNotAllowed || apiErr.Status == http.StatusConflict) {
+		return Result{
+			Status: StatusRejected,
+			Reason: "GitHub refused the merge: " + apiErr.Message,
+			Hint:   fmt.Sprintf("octoguard wait pr %s/%s#%d --until changed", r.Owner, r.Repo, r.Number),
+		}, nil
+	}
 	return w.invalidate(r, ok(data), err)
-}
-
-// notGreen explains why checks-green does not hold.
-func notGreen(s wait.Snapshot, failed bool) string {
-	var bad []string
-	for _, c := range s.Checks {
-		if len(s.Required) > 0 && !slices.Contains(s.Required, c.Name) {
-			continue
-		}
-		switch c.Conclusion {
-		case "success", "neutral", "skipped":
-		default:
-			state := c.Conclusion
-			if state == "" {
-				state = c.Status
-			}
-			bad = append(bad, c.Name+"="+state)
-		}
-	}
-	for _, name := range s.Required {
-		if !slices.ContainsFunc(s.Checks, func(c gh.Check) bool { return c.Name == name }) {
-			bad = append(bad, name+"=missing")
-		}
-	}
-	what := "checks are not green yet"
-	if failed {
-		what = "checks failed"
-	}
-	if len(bad) == 0 {
-		if len(s.Checks) == 0 {
-			return what + ": no checks reported yet"
-		}
-		return what
-	}
-	return what + ": " + strings.Join(bad, ", ")
 }
 
 func (w *Writer) mutate(ctx context.Context, query string, input map[string]any) (Result, error) {

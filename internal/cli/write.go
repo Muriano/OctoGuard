@@ -19,9 +19,9 @@ import (
 	"github.com/Muriano/OctoGuard/internal/write"
 )
 
-// ErrMergeRejected is returned by `pr merge` when checks-green does not hold
-// on a fresh read; the process exits with code 4.
-var ErrMergeRejected = errors.New("merge rejected: checks are not green; see \"reason\" and \"hint\" in the output")
+// ErrMergeRejected is returned by `pr merge` when GitHub refuses the merge
+// (not mergeable, or the head moved); the process exits with code 4.
+var ErrMergeRejected = errors.New("merge rejected by GitHub; see \"reason\" and \"hint\" in the output")
 
 const writesNote = "Writes are spaced (1/s, 60/min per token, queued, never refused) and invalidate the cache of what they touch."
 
@@ -202,9 +202,10 @@ func newPRMergeCmd() *cobra.Command {
 	var merge, squash, rebase bool
 	cmd := &cobra.Command{
 		Use:   "merge <ref> [--merge|--squash|--rebase]",
-		Short: "Merge a pull request once its checks are green",
-		Long: "Read the checks fresh and merge only if checks-green holds; otherwise exit 4 with\n" +
-			"{\"status\":\"rejected\",\"reason\":...,\"hint\":\"octoguard wait pr <ref> --until checks-green\"}.",
+		Short: "Merge a pull request; GitHub decides whether it can",
+		Long: "Merge the head SHA read fresh. octoguard applies no criteria of its own: decide first\n" +
+			"(e.g. after `wait --until checks-green` or `--until changed`). If GitHub refuses, exit 4 with\n" +
+			"{\"status\":\"rejected\",\"reason\":...,\"hint\":\"octoguard wait pr <ref> --until changed\"}.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := parseRef(args[0], ref.PR)

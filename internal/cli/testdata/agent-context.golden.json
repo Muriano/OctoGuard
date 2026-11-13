@@ -200,6 +200,31 @@
       }
     },
     {
+      "path": "hook",
+      "short": "Claude Code PreToolUse hook: block the gh commands octoguard replaces",
+      "args": "claude",
+      "flags": [
+        {
+          "name": "format",
+          "type": "string",
+          "default": "json",
+          "usage": "output format: json|text"
+        }
+      ],
+      "exit_codes": {
+        "0": "ok",
+        "1": "error",
+        "2": "usage error"
+      },
+      "output_schema": {
+        "format": "json",
+        "fields": [
+          "hookSpecificOutput"
+        ],
+        "note": "Claude Code PreToolUse answer; nothing printed when the command is allowed"
+      }
+    },
+    {
       "path": "issue",
       "short": "Write to issues: comment, create",
       "args": "",
@@ -766,6 +791,12 @@
           "usage": "agent: claude|codex|gemini|copilot|all"
         },
         {
+          "name": "enforce",
+          "type": "bool",
+          "default": "false",
+          "usage": "claude: also add a CLAUDE.md block and a PreToolUse hook that blocks the gh commands octoguard replaces"
+        },
+        {
           "name": "format",
           "type": "string",
           "default": "json",
@@ -789,7 +820,7 @@
           "schema_version",
           "results"
         ],
-        "note": "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"
+        "note": "each result: agent, scope, path, action (installed|updated|unchanged|skipped_unmanaged|not_installed)"
       }
     },
     {
@@ -827,7 +858,7 @@
           "schema_version",
           "results"
         ],
-        "note": "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"
+        "note": "each result: agent, scope, path, action (installed|updated|unchanged|skipped_unmanaged|not_installed)"
       }
     },
     {

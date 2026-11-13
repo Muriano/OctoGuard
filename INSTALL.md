@@ -25,18 +25,23 @@ curl -fsSL https://raw.githubusercontent.com/Muriano/OctoGuard/main/install.sh |
 
 The script ([install.sh](install.sh)):
 
-1. Keeps `octoguard` if it is already in `PATH`.
+1. Keeps `octoguard` if it is already in `PATH` and recent enough (upgrades an
+   older Homebrew install).
 2. Otherwise installs it with Homebrew (`brew install muriano/tap/octoguard`), or,
    without Homebrew, downloads the latest release for this OS and architecture
    (macOS or Linux, amd64 or arm64), checks it against `checksums.txt` and puts it
    in `$OCTOGUARD_BIN_DIR` (default `~/.local/bin`).
-3. Runs `octoguard skills install --agent <agent> --scope <scope>`.
+3. Runs `octoguard skills install --agent <agent> --scope <scope>`, adding
+   `--enforce` for `claude` and `all`: a block in `CLAUDE.md` (always in context)
+   and a `PreToolUse` hook (`octoguard hook claude` in `.claude/settings.json`)
+   that blocks the `gh` commands octoguard replaces and names the octoguard
+   command to use. Pass `--no-enforce` only if the user asks for it.
 
 If you cannot pipe a script into `sh`, do the same steps by hand:
 
 ```sh
 brew install muriano/tap/octoguard          # or: go install github.com/Muriano/OctoGuard/cmd/octoguard@latest
-octoguard skills install --agent claude --scope user
+octoguard skills install --agent claude --scope user --enforce
 ```
 
 ## 3. Check and report
@@ -46,8 +51,11 @@ octoguard skills install --agent claude --scope user
   there; it was left untouched, so tell the user.
 - If the script says the bin directory is not in `PATH`, tell the user to add it.
 - `octoguard --version` must work.
-- Tell the user the skill loads in new sessions: they may need to restart the
-  agent.
+- Tell the user the skill, the `CLAUDE.md` block and the hook apply to new
+  sessions: they may need to restart the agent. The previous `settings.json` is
+  kept as `settings.json.octoguard.bak`; to undo `--enforce`, remove the block
+  between the `octoguard:begin`/`octoguard:end` markers and the
+  `octoguard hook claude` hook.
 
 To update later: `brew upgrade octoguard` (or run the script again) and
 `octoguard skills update`.

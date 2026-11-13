@@ -7,6 +7,8 @@
 # Options (passed to `octoguard skills install`):
 #   --agent claude|codex|gemini|copilot|all   (default: all)
 #   --scope user|project                      (default: user)
+#   --no-enforce   for claude, skip the CLAUDE.md block and the hook that
+#                  blocks the gh commands octoguard replaces (on by default)
 #
 # Environment:
 #   OCTOGUARD_BIN_DIR  where to put the binary when Homebrew is not used
@@ -16,12 +18,14 @@ set -eu
 repo="Muriano/OctoGuard"
 agent="all"
 scope="user"
+enforce=1
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--agent) agent="${2:?--agent needs a value}"; shift 2 ;;
 	--scope) scope="${2:?--scope needs a value}"; shift 2 ;;
-	-h | --help) echo "usage: install.sh [--agent claude|codex|gemini|copilot|all] [--scope user|project]"; exit 0 ;;
+	--no-enforce) enforce=0; shift ;;
+	-h | --help) echo "usage: install.sh [--agent claude|codex|gemini|copilot|all] [--scope user|project] [--no-enforce]"; exit 0 ;;
 	*) echo "install.sh: unknown option $1" >&2; exit 2 ;;
 	esac
 done
@@ -87,9 +91,14 @@ install_from_release() {
 	esac
 }
 
-if command -v octoguard >/dev/null 2>&1; then
+if command -v octoguard >/dev/null 2>&1 &&
+	octoguard skills install --help 2>/dev/null | grep -q -- --enforce; then
 	say "octoguard already installed: $(command -v octoguard)"
-elif command -v brew >/dev/null 2>&1; then
+elif command -v octoguard >/dev/null 2>&1 && command -v brew >/dev/null 2>&1 &&
+	brew list --cask muriano/tap/octoguard >/dev/null 2>&1; then
+	say "upgrading an older octoguard with Homebrew"
+	brew upgrade --cask muriano/tap/octoguard
+elif command -v brew >/dev/null 2>&1 && ! command -v octoguard >/dev/null 2>&1; then
 	say "installing with Homebrew"
 	brew install muriano/tap/octoguard
 else
@@ -97,4 +106,8 @@ else
 fi
 
 octoguard --version
-octoguard skills install --agent "$agent" --scope "$scope" --format text
+set -- --agent "$agent" --scope "$scope" --format text
+case "$agent" in
+claude | all) [ "$enforce" = 1 ] && set -- "$@" --enforce ;;
+esac
+octoguard skills install "$@"

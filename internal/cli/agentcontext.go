@@ -43,7 +43,7 @@ type outputSchema struct {
 
 var (
 	daemonSchema = &outputSchema{Format: "json", Fields: []string{"schema_version", "running", "pid", "version", "started_at", "connections", "pollers", "waiters"}, Note: "pid and the rest only when running"}
-	skillsSchema = &outputSchema{Format: "json", Fields: []string{"schema_version", "results"}, Note: "each result: agent, scope, path, action (installed|updated|skipped_unmanaged|not_installed)"}
+	skillsSchema = &outputSchema{Format: "json", Fields: []string{"schema_version", "results"}, Note: "each result: agent, scope, path, action (installed|updated|unchanged|skipped_unmanaged|not_installed)"}
 	writeSchema  = &outputSchema{Format: "json", Fields: []string{"schema_version", "op", "status", "data", "reason", "hint"}, Note: "status ok carries data; status rejected carries reason and hint"}
 )
 
@@ -55,6 +55,7 @@ var outputSchemas = map[string]*outputSchema{
 	"daemon status":     daemonSchema,
 	"daemon stop":       daemonSchema,
 	"get":               {Format: "json", Fields: []string{"schema_version", "ref", "data", "meta"}, Note: "meta: from_cache, not_modified, via, fetched_at"},
+	"hook":              {Format: "json", Fields: []string{"hookSpecificOutput"}, Note: "Claude Code PreToolUse answer; nothing printed when the command is allowed"},
 	"guide":             {Format: "json", Fields: []string{"schema_version", "topics"}, Note: "with a topic: the Markdown guide"},
 	"issue comment":     writeSchema,
 	"issue create":      writeSchema,

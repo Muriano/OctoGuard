@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Muriano/OctoGuard/internal/gh"
 	"github.com/Muriano/OctoGuard/internal/ref"
@@ -84,15 +85,18 @@ type Item struct {
 // Snapshot is the normalized state of a resource at one point in time. Only
 // the parts read for the waiters' conditions are set.
 type Snapshot struct {
-	State      string     `json:"state,omitempty"` // open or closed
-	Merged     bool       `json:"merged,omitempty"`
-	Labels     []string   `json:"labels,omitempty"`
-	Reviews    []Item     `json:"reviews,omitempty"`
-	Comments   []Item     `json:"comments,omitempty"`
-	Checks     []gh.Check `json:"checks,omitempty"`
-	Required   []string   `json:"required_checks,omitempty"`
-	RunStatus  string     `json:"run_status,omitempty"`
-	Conclusion string     `json:"run_conclusion,omitempty"`
+	State    string     `json:"state,omitempty"` // open or closed
+	Merged   bool       `json:"merged,omitempty"`
+	Labels   []string   `json:"labels,omitempty"`
+	Reviews  []Item     `json:"reviews,omitempty"`
+	Comments []Item     `json:"comments,omitempty"`
+	Checks   []gh.Check `json:"checks,omitempty"`
+	// PRUpdatedAt is when the pull request last changed, at or after the
+	// last push to its head; zero when unknown.
+	PRUpdatedAt time.Time `json:"-"`
+	Required    []string  `json:"required_checks,omitempty"`
+	RunStatus   string    `json:"run_status,omitempty"`
+	Conclusion  string    `json:"run_conclusion,omitempty"`
 }
 
 // Change is one difference between two snapshots.
@@ -123,6 +127,7 @@ func BuildSnapshot(parts map[gh.Resource]json.RawMessage) (Snapshot, error) {
 				if s.Checks == nil {
 					s.Checks = pr.Checks.Checks
 				}
+				s.setPRUpdatedAt(pr.Checks.PRUpdatedAt)
 			}
 		case gh.Issue:
 			err = s.setIssue(data)
@@ -134,6 +139,7 @@ func BuildSnapshot(parts map[gh.Resource]json.RawMessage) (Snapshot, error) {
 			var c gh.ChecksData
 			if err = json.Unmarshal(data, &c); err == nil {
 				s.Checks = c.Checks
+				s.setPRUpdatedAt(c.PRUpdatedAt)
 			}
 		case gh.RequiredChecks:
 			var r gh.RequiredData
@@ -157,6 +163,12 @@ func BuildSnapshot(parts map[gh.Resource]json.RawMessage) (Snapshot, error) {
 		s.Checks = []gh.Check{}
 	}
 	return s, nil
+}
+
+func (s *Snapshot) setPRUpdatedAt(v string) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		s.PRUpdatedAt = t
+	}
 }
 
 func (s *Snapshot) setIssue(data json.RawMessage) error {
@@ -210,8 +222,11 @@ func Evaluate(cond Condition, prev, cur Snapshot) (met bool, changes []Change) {
 	}
 	switch cond {
 	case ChecksDone:
-		// No check reported yet is not done: CI may not have registered them.
-		met = len(cur.Checks) > 0 && !slices.ContainsFunc(cur.Checks, func(c gh.Check) bool { return c.Status != "completed" })
+		if len(cur.Checks) == 0 {
+			met = NoCI(cur)
+		} else {
+			met = !slices.ContainsFunc(cur.Checks, func(c gh.Check) bool { return c.Status != "completed" })
+		}
 	case ChecksGreen:
 		met = green(cur)
 	case Review:
@@ -262,15 +277,31 @@ func relevant(s Snapshot) []gh.Check {
 	return out
 }
 
-// green: at least one relevant check reported, every relevant check
-// succeeded, was neutral or skipped, and every required check has reported.
-// No checks at all is not green: right after a push, CI may not have
-// registered its checks yet.
+// NoCIGrace is how long a pull request must go without any check after its
+// last update before it counts as having no CI. CI registers its checks a few
+// seconds after a push.
+const NoCIGrace = time.Minute
+
+// now is replaced in tests.
+var now = time.Now
+
+// NoCI reports whether s looks like a pull request on a repository without
+// CI: no check at all, no required check, and no change for NoCIGrace. Right
+// after a push there are no checks yet either, so a recent or unknown update
+// time is not enough.
+func NoCI(s Snapshot) bool {
+	return len(s.Checks) == 0 && len(s.Required) == 0 &&
+		!s.PRUpdatedAt.IsZero() && now().Sub(s.PRUpdatedAt) >= NoCIGrace
+}
+
+// green: every relevant check succeeded, was neutral or skipped, and every
+// required check has reported. With no checks at all it holds only for a pull
+// request without CI (see NoCI).
 func green(s Snapshot) bool {
-	rel := relevant(s)
-	if len(rel) == 0 {
-		return false
+	if len(s.Checks) == 0 {
+		return NoCI(s)
 	}
+	rel := relevant(s)
 	for _, name := range s.Required {
 		if !slices.ContainsFunc(rel, func(c gh.Check) bool { return c.Name == name }) {
 			return false

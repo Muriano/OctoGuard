@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Muriano/OctoGuard/internal/gh"
 	"github.com/Muriano/OctoGuard/internal/ref"
@@ -37,10 +38,39 @@ func TestChecksGreen_NoRequiredChecksUsesAll(t *testing.T) {
 	}
 }
 
-func TestChecksDone_NoChecksIsNotMet(t *testing.T) {
-	cur := Snapshot{Checks: []gh.Check{}}
-	if met, _ := Evaluate(ChecksDone, cur, cur); met {
-		t.Error("checks-done met with no checks reported")
+func TestNoChecks_NoCIAfterGrace(t *testing.T) {
+	t0 := time.Date(2026, 11, 13, 10, 0, 0, 0, time.UTC)
+	now = func() time.Time { return t0 }
+	t.Cleanup(func() { now = time.Now })
+	for _, tc := range []struct {
+		name string
+		snap Snapshot
+		met  bool
+	}{
+		// Right after a push CI may not have registered its checks (#38).
+		{"just pushed", Snapshot{Checks: []gh.Check{}, PRUpdatedAt: t0.Add(-5 * time.Second)}, false},
+		{"update time unknown", Snapshot{Checks: []gh.Check{}}, false},
+		// A repository without CI merges once the grace has passed.
+		{"no CI", Snapshot{Checks: []gh.Check{}, PRUpdatedAt: t0.Add(-NoCIGrace)}, true},
+		{"required check never reported", Snapshot{Checks: []gh.Check{}, Required: []string{"ci"}, PRUpdatedAt: t0.Add(-time.Hour)}, false},
+	} {
+		for _, cond := range []Condition{ChecksGreen, ChecksDone} {
+			if met, _ := Evaluate(cond, tc.snap, tc.snap); met != tc.met {
+				t.Errorf("%s %s: met = %t, want %t", cond, tc.name, met, tc.met)
+			}
+		}
+	}
+}
+
+func TestBuildSnapshot_PRUpdatedAt(t *testing.T) {
+	s, err := BuildSnapshot(map[gh.Resource]json.RawMessage{
+		gh.Checks: json.RawMessage(`{"head_sha":"abc","pr_updated_at":"2026-11-13T09:00:00Z","checks":[]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC); !s.PRUpdatedAt.Equal(want) {
+		t.Fatalf("PRUpdatedAt = %v, want %v", s.PRUpdatedAt, want)
 	}
 }
 

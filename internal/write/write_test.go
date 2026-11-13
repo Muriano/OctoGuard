@@ -151,6 +151,25 @@ func TestMerge_RejectsWhenNoChecksYet(t *testing.T) {
 	}
 }
 
+func TestMerge_NoCIMergesAfterGrace(t *testing.T) {
+	e := newEnv(t)
+	e.setPR(`[]`, `"none"`)
+	e.srv.SetResource("/repos/o/r/pulls/2",
+		[]byte(`{"number":2,"head":{"sha":"abc"},"base":{"ref":"main"},"updated_at":"2020-01-01T00:00:00Z"}`), `"old"`)
+	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+
+	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusOK {
+		t.Fatalf("unexpected result %+v", res)
+	}
+	if n := e.srv.Calls(mergePath); n != 1 {
+		t.Fatalf("merge endpoint called %d times", n)
+	}
+}
+
 func TestMerge_FreshReadIgnoresCache(t *testing.T) {
 	e := newEnv(t)
 	e.setPR(greenRuns, `"green"`)

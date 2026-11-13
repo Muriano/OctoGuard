@@ -30,9 +30,12 @@ type Check struct {
 }
 
 // ChecksData is the merge of the check runs and commit statuses of a head SHA.
+// PRUpdatedAt is the pull request's updated_at: GitHub moves it on every push
+// to the head branch, so it bounds how long ago the head SHA arrived.
 type ChecksData struct {
-	HeadSHA string  `json:"head_sha"`
-	Checks  []Check `json:"checks"`
+	HeadSHA     string  `json:"head_sha"`
+	PRUpdatedAt string  `json:"pr_updated_at,omitempty"`
+	Checks      []Check `json:"checks"`
 }
 
 // RequiredData lists the status checks the base branch requires, from branch
@@ -106,7 +109,7 @@ func (rd *read) restResource(r ref.Ref, what Resource) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		return rd.checks(r, pull.Head.SHA)
+		return rd.checks(r, pull)
 	case RequiredChecks:
 		pull, err := rd.pull(r)
 		if err != nil {
@@ -136,7 +139,7 @@ func (rd *read) restResource(r ref.Ref, what Resource) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		checks, err := rd.checks(r, pull.Head.SHA)
+		checks, err := rd.checks(r, pull)
 		if err != nil {
 			return nil, err
 		}
@@ -153,6 +156,7 @@ type pullInfo struct {
 	Base struct {
 		Ref string `json:"ref"`
 	} `json:"base"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 func (rd *read) pull(r ref.Ref) (pullInfo, error) {
@@ -211,7 +215,8 @@ func (rd *read) restList(keyBase, path, field string) (json.RawMessage, error) {
 }
 
 // checks merges the check runs and the commit statuses of sha.
-func (rd *read) checks(r ref.Ref, sha string) (json.RawMessage, error) {
+func (rd *read) checks(r ref.Ref, pull pullInfo) (json.RawMessage, error) {
+	sha := pull.Head.SHA
 	base, repo := r.Key()+"/checks/"+sha, repoPath(r)+"/commits/"+url.PathEscape(sha)
 	runsRaw, err := rd.restList(base+"/runs", repo+"/check-runs", "check_runs")
 	if err != nil {
@@ -238,7 +243,7 @@ func (rd *read) checks(r ref.Ref, sha string) (json.RawMessage, error) {
 	if err := json.Unmarshal(statusRaw, &combined); err != nil {
 		return nil, fmt.Errorf("github: decode statuses: %w", err)
 	}
-	out := ChecksData{HeadSHA: sha, Checks: []Check{}}
+	out := ChecksData{HeadSHA: sha, PRUpdatedAt: pull.UpdatedAt, Checks: []Check{}}
 	for _, cr := range runs {
 		out.Checks = append(out.Checks, Check{Name: cr.Name, Kind: "check_run", Status: cr.Status, Conclusion: cr.Conclusion})
 	}
@@ -494,7 +499,7 @@ func normalizeGraphQL(r ref.Ref, what Resource, data []byte) ([]byte, error) {
 		return json.Marshal(reviews)
 	}
 
-	checks := ChecksData{HeadSHA: p.HeadRefOid, Checks: []Check{}}
+	checks := ChecksData{HeadSHA: p.HeadRefOid, PRUpdatedAt: p.UpdatedAt, Checks: []Check{}}
 	if n := p.Commits.Nodes; len(n) > 0 && n[0].Commit.StatusCheckRollup != nil {
 		for _, c := range n[0].Commit.StatusCheckRollup.Contexts.Nodes {
 			if c.Typename == "StatusContext" {

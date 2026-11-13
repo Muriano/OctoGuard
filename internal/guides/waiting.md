@@ -10,9 +10,9 @@ Conditions:
 The JSON has `status`: `met`, `failed` (it can no longer be met, e.g. a red
 check for `checks-green`) or `pending`, plus `changes` and the current `state`.
 
-`checks-done` and `checks-green` need at least one check: right after a push
-CI may not have registered its checks yet, so no checks keeps the wait going.
-On a repository without CI they never hold; use `--timeout`.
+With no checks, `checks-done`/`checks-green` wait: CI may not have started.
+Still none (and none required) 1 min after the last push means no CI: both
+hold, and `pr merge` merges.
 
 `pending` means `--timeout` expired first: the exit code is 3 and it is not an
 error. Run the same command again. The daemon keeps polling for 2 minutes after

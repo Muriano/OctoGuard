@@ -210,7 +210,8 @@ func Evaluate(cond Condition, prev, cur Snapshot) (met bool, changes []Change) {
 	}
 	switch cond {
 	case ChecksDone:
-		met = !slices.ContainsFunc(cur.Checks, func(c gh.Check) bool { return c.Status != "completed" })
+		// No check reported yet is not done: CI may not have registered them.
+		met = len(cur.Checks) > 0 && !slices.ContainsFunc(cur.Checks, func(c gh.Check) bool { return c.Status != "completed" })
 	case ChecksGreen:
 		met = green(cur)
 	case Review:
@@ -261,10 +262,15 @@ func relevant(s Snapshot) []gh.Check {
 	return out
 }
 
-// green: every relevant check succeeded, was neutral or skipped, and every
-// required check has reported.
+// green: at least one relevant check reported, every relevant check
+// succeeded, was neutral or skipped, and every required check has reported.
+// No checks at all is not green: right after a push, CI may not have
+// registered its checks yet.
 func green(s Snapshot) bool {
 	rel := relevant(s)
+	if len(rel) == 0 {
+		return false
+	}
 	for _, name := range s.Required {
 		if !slices.ContainsFunc(rel, func(c gh.Check) bool { return c.Name == name }) {
 			return false

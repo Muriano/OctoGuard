@@ -134,6 +134,23 @@ func TestMerge_RejectsWhenChecksRed(t *testing.T) {
 	}
 }
 
+func TestMerge_RejectsWhenNoChecksYet(t *testing.T) {
+	e := newEnv(t)
+	e.setPR(`[]`, `"none"`)
+	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+
+	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusRejected || !strings.Contains(res.Reason, "no checks reported yet") {
+		t.Fatalf("unexpected result %+v", res)
+	}
+	if n := e.srv.Calls(mergePath); n != 0 {
+		t.Fatalf("merge endpoint called %d times", n)
+	}
+}
+
 func TestMerge_FreshReadIgnoresCache(t *testing.T) {
 	e := newEnv(t)
 	e.setPR(greenRuns, `"green"`)

@@ -50,8 +50,11 @@ func TestNoChecks_NoCIAfterGrace(t *testing.T) {
 		// Right after a push CI may not have registered its checks (#38).
 		{"just pushed", Snapshot{Checks: []gh.Check{}, PRUpdatedAt: t0.Add(-5 * time.Second)}, false},
 		{"update time unknown", Snapshot{Checks: []gh.Check{}}, false},
-		// A repository without CI merges once the grace has passed.
-		{"no CI", Snapshot{Checks: []gh.Check{}, PRUpdatedAt: t0.Add(-NoCIGrace)}, true},
+		// No checks for NoCIGrace even though the repository has CI.
+		{"no checks after grace", Snapshot{Checks: []gh.Check{}, PRUpdatedAt: t0.Add(-NoCIGrace)}, true},
+		// A repository without CI merges as soon as it can.
+		{"repo without CI, just pushed", Snapshot{Checks: []gh.Check{}, RepoWithoutCI: true, PRUpdatedAt: t0}, true},
+		{"repo without CI but a required check", Snapshot{Checks: []gh.Check{}, RepoWithoutCI: true, Required: []string{"ci"}}, false},
 		{"required check never reported", Snapshot{Checks: []gh.Check{}, Required: []string{"ci"}, PRUpdatedAt: t0.Add(-time.Hour)}, false},
 	} {
 		for _, cond := range []Condition{ChecksGreen, ChecksDone} {

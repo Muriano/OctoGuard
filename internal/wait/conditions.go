@@ -94,9 +94,11 @@ type Snapshot struct {
 	// PRUpdatedAt is when the pull request last changed, at or after the
 	// last push to its head; zero when unknown.
 	PRUpdatedAt time.Time `json:"-"`
-	Required    []string  `json:"required_checks,omitempty"`
-	RunStatus   string    `json:"run_status,omitempty"`
-	Conclusion  string    `json:"run_conclusion,omitempty"`
+	// RepoWithoutCI: the repository shows no sign of CI (see gh.ChecksData).
+	RepoWithoutCI bool     `json:"-"`
+	Required      []string `json:"required_checks,omitempty"`
+	RunStatus     string   `json:"run_status,omitempty"`
+	Conclusion    string   `json:"run_conclusion,omitempty"`
 }
 
 // Change is one difference between two snapshots.
@@ -140,6 +142,7 @@ func BuildSnapshot(parts map[gh.Resource]json.RawMessage) (Snapshot, error) {
 			if err = json.Unmarshal(data, &c); err == nil {
 				s.Checks = c.Checks
 				s.setPRUpdatedAt(c.PRUpdatedAt)
+				s.RepoWithoutCI = c.RepoWithoutCI
 			}
 		case gh.RequiredChecks:
 			var r gh.RequiredData
@@ -277,21 +280,24 @@ func relevant(s Snapshot) []gh.Check {
 	return out
 }
 
-// NoCIGrace is how long a pull request must go without any check after its
-// last update before it counts as having no CI. CI registers its checks a few
+// NoCIGrace is how long a pull request in a repository that has CI must go
+// without any check after its last update before it counts as having none
+// (e.g. workflows filtered out by paths). CI registers its checks a few
 // seconds after a push.
 const NoCIGrace = time.Minute
 
 // now is replaced in tests.
 var now = time.Now
 
-// NoCI reports whether s looks like a pull request on a repository without
-// CI: no check at all, no required check, and no change for NoCIGrace. Right
-// after a push there are no checks yet either, so a recent or unknown update
-// time is not enough.
+// NoCI reports whether s is a pull request no CI will report on: no check at
+// all, no required check, and either a repository without CI or no change for
+// NoCIGrace. Right after a push in a repository with CI there are no checks
+// yet either, so a recent or unknown update time is not enough there.
 func NoCI(s Snapshot) bool {
-	return len(s.Checks) == 0 && len(s.Required) == 0 &&
-		!s.PRUpdatedAt.IsZero() && now().Sub(s.PRUpdatedAt) >= NoCIGrace
+	if len(s.Checks) > 0 || len(s.Required) > 0 {
+		return false
+	}
+	return s.RepoWithoutCI || (!s.PRUpdatedAt.IsZero() && now().Sub(s.PRUpdatedAt) >= NoCIGrace)
 }
 
 // green: every relevant check succeeded, was neutral or skipped, and every

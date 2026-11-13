@@ -170,6 +170,44 @@ func TestMerge_NoCIMergesAfterGrace(t *testing.T) {
 	}
 }
 
+func TestMerge_RepoWithoutCIMergesAtOnce(t *testing.T) {
+	e := newEnv(t)
+	e.setPR(`[]`, `"none"`)
+	e.srv.SetResource("/repos/o/r/pulls/2",
+		[]byte(`{"number":2,"head":{"sha":"abc"},"base":{"ref":"main","sha":"def"},"updated_at":"`+
+			time.Now().UTC().Format(time.RFC3339)+`"}`), `"new"`)
+	e.srv.SetResource("/repos/o/r/actions/workflows", []byte(`{"total_count":0,"workflows":[]}`), `"w"`)
+	e.srv.SetResource("/repos/o/r/commits/def/check-runs", []byte(`{"total_count":0,"check_runs":[]}`), `"bc"`)
+	e.srv.SetResource("/repos/o/r/commits/def/status", []byte(`{"total_count":0,"statuses":[]}`), `"bs"`)
+	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+
+	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusOK || e.srv.Calls(mergePath) != 1 {
+		t.Fatalf("unexpected result %+v, merge calls %d", res, e.srv.Calls(mergePath))
+	}
+}
+
+func TestMerge_RepoWithActiveWorkflowWaitsForChecks(t *testing.T) {
+	e := newEnv(t)
+	e.setPR(`[]`, `"none"`)
+	e.srv.SetResource("/repos/o/r/pulls/2",
+		[]byte(`{"number":2,"head":{"sha":"abc"},"base":{"ref":"main","sha":"def"},"updated_at":"`+
+			time.Now().UTC().Format(time.RFC3339)+`"}`), `"new"`)
+	e.srv.SetResource("/repos/o/r/actions/workflows", []byte(`{"total_count":1,"workflows":[{"state":"active"}]}`), `"w"`)
+	e.srv.SetResponse("PUT", mergePath, 200, []byte(`{"merged":true}`))
+
+	res, err := e.w.Execute(context.Background(), Request{Op: PRMerge, Ref: prRef, Method: "squash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusRejected || e.srv.Calls(mergePath) != 0 {
+		t.Fatalf("unexpected result %+v, merge calls %d", res, e.srv.Calls(mergePath))
+	}
+}
+
 func TestMerge_FreshReadIgnoresCache(t *testing.T) {
 	e := newEnv(t)
 	e.setPR(greenRuns, `"green"`)

@@ -32,10 +32,13 @@ type Check struct {
 // ChecksData is the merge of the check runs and commit statuses of a head SHA.
 // PRUpdatedAt is the pull request's updated_at: GitHub moves it on every push
 // to the head branch, so it bounds how long ago the head SHA arrived.
+// RepoWithoutCI is set, only when there are no checks, if the repository has
+// no active Actions workflow and the base commit has no checks or statuses.
 type ChecksData struct {
-	HeadSHA     string  `json:"head_sha"`
-	PRUpdatedAt string  `json:"pr_updated_at,omitempty"`
-	Checks      []Check `json:"checks"`
+	HeadSHA       string  `json:"head_sha"`
+	PRUpdatedAt   string  `json:"pr_updated_at,omitempty"`
+	RepoWithoutCI bool    `json:"repo_without_ci,omitempty"`
+	Checks        []Check `json:"checks"`
 }
 
 // RequiredData lists the status checks the base branch requires, from branch
@@ -155,6 +158,7 @@ type pullInfo struct {
 	} `json:"head"`
 	Base struct {
 		Ref string `json:"ref"`
+		SHA string `json:"sha"`
 	} `json:"base"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -250,7 +254,54 @@ func (rd *read) checks(r ref.Ref, pull pullInfo) (json.RawMessage, error) {
 	for _, st := range combined.Statuses {
 		out.Checks = append(out.Checks, statusCheck(st.Context, st.State))
 	}
+	if len(out.Checks) == 0 {
+		out.RepoWithoutCI = rd.withoutCI(r, pull.Base.SHA)
+	}
 	return json.Marshal(out)
+}
+
+// withoutCI reports whether the repository shows no sign of CI: no active
+// Actions workflow and no check run or status on the base commit. Any read
+// error counts as "has CI", the safe answer.
+func (rd *read) withoutCI(r ref.Ref, baseSHA string) bool {
+	if baseSHA == "" {
+		return false
+	}
+	repo := repoPath(r)
+	wfRaw, err := rd.rest(r.Key()+"/workflows", repo+"/actions/workflows?per_page=100")
+	if err != nil {
+		return false
+	}
+	var wf struct {
+		Workflows []struct {
+			State string `json:"state"`
+		} `json:"workflows"`
+	}
+	if json.Unmarshal(wfRaw, &wf) != nil {
+		return false
+	}
+	for _, w := range wf.Workflows {
+		if w.State == "active" {
+			return false
+		}
+	}
+	base, commit := r.Key()+"/checks/"+baseSHA, repo+"/commits/"+url.PathEscape(baseSHA)
+	for _, p := range []struct{ key, path string }{
+		{base + "/runs?count", commit + "/check-runs?per_page=1"},
+		{base + "/status?count", commit + "/status?per_page=1"},
+	} {
+		raw, err := rd.rest(p.key, p.path)
+		if err != nil {
+			return false
+		}
+		var n struct {
+			TotalCount *int `json:"total_count"`
+		}
+		if json.Unmarshal(raw, &n) != nil || n.TotalCount == nil || *n.TotalCount > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // statusCheck maps a commit status state onto the check run vocabulary.

@@ -376,7 +376,7 @@ func notGreen(s wait.Snapshot, failed bool) string {
 	}
 	if len(bad) == 0 {
 		if len(s.Checks) == 0 {
-			return fmt.Sprintf("%s: no checks reported yet (without CI it merges %s after the last push)", what, wait.NoCIGrace)
+			return fmt.Sprintf("%s: no checks reported yet (if none appear, it merges %s after the PR's last update)", what, wait.NoCIGrace)
 		}
 		return what
 	}

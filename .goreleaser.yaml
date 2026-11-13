@@ -28,17 +28,22 @@ checksum:
 changelog:
   sort: asc
 
-brews:
+homebrew_casks:
   - name: octoguard
     repository:
       owner: Muriano
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/Muriano/OctoGuard
     description: GitHub API quota guardian for AI agents
     license: MIT
-    install: |
-      bin.install "octoguard"
-    test: |
-      system "#{bin}/octoguard", "--version"
+    binaries: [octoguard]
+    # The binaries are not notarized: drop the quarantine flag so Gatekeeper
+    # does not block the first run on macOS.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/octoguard"]
+          end

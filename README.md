@@ -32,6 +32,8 @@ curl -fsSL https://raw.githubusercontent.com/Muriano/OctoGuard/main/install.sh |
 
 `--agent` acepta `claude`, `codex`, `gemini`, `copilot` o `all` (por defecto), y `--scope` acepta `user` (por defecto) o `project`.
 
+Para Claude Code instala además, por defecto, un bloque en `CLAUDE.md` y un hook `PreToolUse` (`octoguard hook claude`) que bloquea los `gh` que octoguard sustituye y le indica el comando de octoguard equivalente. Así Claude ni se plantea usar `gh` para leer, esperar o escribir en PRs e issues. Se desactiva con `--no-enforce`; a mano es `octoguard skills install --agent claude --enforce`.
+
 ### Solo el binario
 
 Con Homebrew (macOS y Linux):

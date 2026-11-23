@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -96,7 +98,7 @@ func repoRef(repo string, kind ref.Kind) (ref.Ref, error) {
 func newPRCreateCmd() *cobra.Command {
 	var b bodyFlags
 	var repo, title, base, head string
-	var labels []string
+	var labels, reviewers, assignees []string
 	cmd := &cobra.Command{
 		Use:   "create --title T --head BRANCH --base BRANCH",
 		Short: "Create a pull request",
@@ -110,7 +112,8 @@ func newPRCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runWrite(cmd, write.Request{Op: write.PRCreate, Ref: r, Title: title, Body: body, Base: base, Head: head, Labels: labels})
+			return runWrite(cmd, write.Request{Op: write.PRCreate, Ref: r, Title: title, Body: body, Base: base, Head: head,
+				Labels: labels, Reviewers: reviewers, Assignees: assignees})
 		},
 	}
 	b.register(cmd)
@@ -119,13 +122,15 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&base, "base", "B", "", "branch to merge into")
 	cmd.Flags().StringVarP(&head, "head", "H", "", "branch with the changes")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "add a label (repeatable)")
+	cmd.Flags().StringSliceVarP(&reviewers, "reviewer", "r", nil, "request a review from a login or org/team (repeatable; \"@me\" is you)")
+	cmd.Flags().StringSliceVarP(&assignees, "assignee", "a", nil, "assign a login (repeatable; \"@me\" is you)")
 	return cmd
 }
 
 func newIssueCreateCmd() *cobra.Command {
 	var b bodyFlags
 	var repo, title string
-	var labels []string
+	var labels, assignees []string
 	cmd := &cobra.Command{
 		Use:   "create --title T",
 		Short: "Create an issue",
@@ -139,13 +144,14 @@ func newIssueCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runWrite(cmd, write.Request{Op: write.IssueCreate, Ref: r, Title: title, Body: body, Labels: labels})
+			return runWrite(cmd, write.Request{Op: write.IssueCreate, Ref: r, Title: title, Body: body, Labels: labels, Assignees: assignees})
 		},
 	}
 	b.register(cmd)
 	cmd.Flags().StringVarP(&repo, "repo", "R", "", "owner/repo (default: the origin remote of the current directory)")
 	cmd.Flags().StringVarP(&title, "title", "t", "", "title")
 	cmd.Flags().StringSliceVarP(&labels, "label", "l", nil, "add a label (repeatable)")
+	cmd.Flags().StringSliceVarP(&assignees, "assignee", "a", nil, "assign a login (repeatable; \"@me\" is you)")
 	return cmd
 }
 
@@ -174,10 +180,10 @@ func newCommentCmd(op write.Op, kind ref.Kind) *cobra.Command {
 func newPREditCmd() *cobra.Command {
 	var b bodyFlags
 	var title, base string
-	var labels []string
+	var labels, reviewers, assignees []string
 	cmd := &cobra.Command{
 		Use:   "edit <ref>",
-		Short: "Edit a pull request's title, body or base, or add labels",
+		Short: "Edit a pull request's title, body or base, or add labels, reviewers or assignees",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := parseRef(args[0], ref.PR)
@@ -188,13 +194,16 @@ func newPREditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runWrite(cmd, write.Request{Op: write.PREdit, Ref: r, Title: title, Body: body, Base: base, Labels: labels})
+			return runWrite(cmd, write.Request{Op: write.PREdit, Ref: r, Title: title, Body: body, Base: base,
+				Labels: labels, Reviewers: reviewers, Assignees: assignees})
 		},
 	}
 	b.register(cmd)
 	cmd.Flags().StringVarP(&title, "title", "t", "", "new title")
 	cmd.Flags().StringVarP(&base, "base", "B", "", "new base branch")
 	cmd.Flags().StringSliceVar(&labels, "add-label", nil, "add a label (repeatable)")
+	cmd.Flags().StringSliceVar(&reviewers, "add-reviewer", nil, "request a review from a login or org/team (repeatable; \"@me\" is you)")
+	cmd.Flags().StringSliceVar(&assignees, "add-assignee", nil, "assign a login (repeatable; \"@me\" is you)")
 	return cmd
 }
 
@@ -229,17 +238,41 @@ func newPRMergeCmd() *cobra.Command {
 }
 
 func newItemAddCmd() *cobra.Command {
-	var project, content string
+	var project, content, pr, issue string
 	cmd := &cobra.Command{
-		Use:   "item-add --project PVT_... --content-id NODE_ID",
-		Short: "Add an issue or pull request (by node ID) to a project",
-		Args:  cobra.NoArgs,
+		Use:   "item-add --project OWNER/NUMBER (--pr|--issue) <ref>  |  --project PVT_... --content-id NODE_ID",
+		Short: "Add an issue or pull request to a project",
+		Long: "With --project OWNER/NUMBER (e.g. my-org/1) and --pr or --issue the item is added by REST,\n" +
+			"which spends core quota, not GraphQL. With a PVT_ node ID and --content-id it uses GraphQL.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runWrite(cmd, write.Request{Op: write.ProjectItemAdd, Project: project, Content: content})
+			if strings.HasPrefix(project, "PVT_") || (pr == "" && issue == "") {
+				return runWrite(cmd, write.Request{Op: write.ProjectItemAdd, Project: project, Content: content})
+			}
+			owner, num, okSep := strings.Cut(project, "/")
+			if !okSep {
+				owner, num, okSep = strings.Cut(project, "#")
+			}
+			n, err := strconv.Atoi(num)
+			if !okSep || owner == "" || err != nil || n <= 0 {
+				return fmt.Errorf("%w: --project must be OWNER/NUMBER or a PVT_ node ID", ref.ErrUsage)
+			}
+			s, kind := pr, ref.PR
+			if issue != "" {
+				s, kind = issue, ref.Issue
+			}
+			r, err := parseRef(s, kind)
+			if err != nil {
+				return err
+			}
+			return runWrite(cmd, write.Request{Op: write.ProjectItemAdd, Ref: r, ProjectOwner: owner, ProjectNumber: n})
 		},
 	}
-	cmd.Flags().StringVar(&project, "project", "", "project node ID (PVT_...)")
-	cmd.Flags().StringVar(&content, "content-id", "", "node ID of the issue or pull request (\"node_id\" in `octoguard get`)")
+	cmd.Flags().StringVar(&project, "project", "", "OWNER/NUMBER of the project, or its node ID (PVT_...)")
+	cmd.Flags().StringVar(&pr, "pr", "", "pull request to add (REST)")
+	cmd.Flags().StringVar(&issue, "issue", "", "issue to add (REST)")
+	cmd.Flags().StringVar(&content, "content-id", "", "node ID of the issue or pull request, with a PVT_ project (\"node_id\" in `octoguard get`)")
+	cmd.MarkFlagsMutuallyExclusive("pr", "issue", "content-id")
 	return cmd
 }
 

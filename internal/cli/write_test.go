@@ -115,11 +115,38 @@ func TestWriteCLI_UsageErrors(t *testing.T) {
 		{"pr", "merge", "o/r#1", "--squash", "--rebase"},
 		{"issue", "create", "-R", "o/r"},
 		{"project", "item-edit", "--project", "P"},
+		{"project", "item-add", "--project", "acme", "--pr", "o/r#1"},
+		{"project", "item-add", "--project", "acme/x", "--pr", "o/r#1"},
 	} {
 		if _, _, err := run(t, args...); err == nil {
 			t.Errorf("%v: no error", args)
 		} else if !errors.Is(err, ref.ErrUsage) && !strings.Contains(err.Error(), "none of the others") {
 			t.Errorf("%v: err = %v, want a usage error", args, err)
 		}
+	}
+}
+
+func TestWriteCLI_EditReviewersAndProjectByREST(t *testing.T) {
+	isolate(t)
+	srv := fakegh.New(t)
+	srv.SetResponse("POST", "/repos/o/r/pulls/5/requested_reviewers", 201, []byte(`{}`))
+	srv.SetResponse("POST", "/repos/o/r/issues/5/assignees", 201, []byte(`{"assignees":[{"login":"bo"}]}`))
+	srv.SetResponse("POST", "/orgs/acme/projectsV2/1/items", 201, []byte(`{"id":9}`))
+	setDial(t, noDaemon)
+
+	if _, stderr, err := run(t, "--api-url", srv.URL, "pr", "edit", "o/r#5", "--add-reviewer", "ana,acme/core", "--add-assignee", "bo"); err != nil {
+		t.Fatalf("pr edit: %v (stderr %q)", err, stderr)
+	}
+	if got := string(srv.Body("/repos/o/r/pulls/5/requested_reviewers")); got != `{"reviewers":["ana"],"team_reviewers":["core"]}` {
+		t.Fatalf("reviewers body = %s", got)
+	}
+	if _, stderr, err := run(t, "--api-url", srv.URL, "project", "item-add", "--project", "acme/1", "--pr", "o/r#5"); err != nil {
+		t.Fatalf("item-add: %v (stderr %q)", err, stderr)
+	}
+	if got := string(srv.Body("/orgs/acme/projectsV2/1/items")); got != `{"number":5,"owner":"o","repo":"r","type":"PullRequest"}` {
+		t.Fatalf("item-add body = %s", got)
+	}
+	if srv.GraphQLCalls() != 0 {
+		t.Fatal("spent GraphQL")
 	}
 }

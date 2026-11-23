@@ -126,7 +126,11 @@ func replacement(args []string) string {
 	if len(args) < 2 {
 		return ""
 	}
-	switch args[0] + " " + args[1] {
+	sub := args[0] + " " + args[1]
+	if allowed, ok := coveredFlags[sub]; ok && !onlyFlags(args[2:], allowed) {
+		return "" // a flag octoguard has no equivalent for: let gh do it
+	}
+	switch sub {
 	case "pr view":
 		return "`octoguard get pr <ref>` (also reviews, comments, checks)"
 	case "pr checks":
@@ -156,6 +160,41 @@ func replacement(args []string) string {
 		return apiReplacement(args[1:])
 	}
 	return ""
+}
+
+// coveredFlags lists, for the gh writes octoguard replaces, the flags it has
+// an equivalent for. A call with any other flag (--remove-label, --draft,
+// --auto, --delete-branch, ...) is let through.
+var coveredFlags = map[string]map[string]bool{
+	"pr create": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--base", "-B", "--head", "-H",
+		"--label", "-l", "--reviewer", "-r", "--assignee", "-a", "--repo", "-R"),
+	"pr edit": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--base", "-B",
+		"--add-label", "--add-reviewer", "--add-assignee", "--repo", "-R"),
+	"pr merge":     set("--merge", "-m", "--squash", "-s", "--rebase", "-r", "--repo", "-R"),
+	"issue create": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--label", "-l", "--assignee", "-a", "--repo", "-R"),
+}
+
+func set(items ...string) map[string]bool {
+	m := make(map[string]bool, len(items))
+	for _, i := range items {
+		m[i] = true
+	}
+	return m
+}
+
+// onlyFlags reports whether every flag in args (--flag, --flag=value, -f) is
+// in allowed. Non-flag words (refs, values) are ignored.
+func onlyFlags(args []string, allowed map[string]bool) bool {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(a, "=")
+		if !allowed[name] {
+			return false
+		}
+	}
+	return true
 }
 
 // apiReplacement maps a `gh api` call onto octoguard by its endpoint.

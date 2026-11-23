@@ -31,11 +31,19 @@ The script ([install.sh](install.sh)):
    without Homebrew, downloads the latest release for this OS and architecture
    (macOS or Linux, amd64 or arm64), checks it against `checksums.txt` and puts it
    in `$OCTOGUARD_BIN_DIR` (default `~/.local/bin`).
-3. Runs `octoguard skills install --agent <agent> --scope <scope>`, adding
-   `--enforce` for `claude` and `all`: a block in `CLAUDE.md` (always in context)
-   and a `PreToolUse` hook (`octoguard hook claude` in `.claude/settings.json`)
-   that blocks the `gh` commands octoguard replaces and names the octoguard
-   command to use. Pass `--no-enforce` only if the user asks for it.
+3. Runs `octoguard skills install --agent <agent> --scope <scope> --enforce`:
+   besides `SKILL.md`, a block in the agent's always-in-context instructions file
+   and a pre-tool hook (`octoguard hook <agent>`) that blocks the `gh` commands
+   octoguard replaces and names the octoguard command to use. Pass
+   `--no-enforce` only if the user asks for it. Files per agent (user scope, then
+   project scope):
+
+   | Agent | Instructions | Hook |
+   |---|---|---|
+   | `claude` | `~/.claude/CLAUDE.md`, `CLAUDE.md` | `PreToolUse` in `~/.claude/settings.json`, `.claude/settings.json` |
+   | `codex` | `~/.codex/AGENTS.md`, `AGENTS.md` | `PreToolUse` in `~/.codex/hooks.json`, `.codex/hooks.json` |
+   | `gemini` | `~/.gemini/GEMINI.md`, `GEMINI.md` | `BeforeTool` in `~/.gemini/settings.json`, `.gemini/settings.json` |
+   | `copilot` | `~/.copilot/copilot-instructions.md`, `.github/copilot-instructions.md` | `preToolUse` in `~/.copilot/hooks/octoguard.json`, `.github/hooks/octoguard.json` |
 
 If you cannot pipe a script into `sh`, do the same steps by hand:
 
@@ -47,17 +55,21 @@ octoguard skills install --agent claude --scope user --enforce
 ## 3. Check and report
 
 - The last lines print `<agent>  <action>  <path>`, with action `installed`,
-  `updated` or `unchanged` (for `SKILL.md`, and with `--enforce` for
-  `CLAUDE.md` and `settings.json`).
+  `updated` or `unchanged` (for `SKILL.md`, and with `--enforce` for the
+  instructions and hook files above).
   `skipped_unmanaged` means a `SKILL.md` not written by octoguard already exists
   there; it was left untouched, so tell the user.
 - If the script says the bin directory is not in `PATH`, tell the user to add it.
 - `octoguard --version` must work.
-- Tell the user the skill, the `CLAUDE.md` block and the hook apply to new
-  sessions: they may need to restart the agent. The previous `settings.json` is
-  kept as `settings.json.octoguard.bak`; to undo `--enforce`, remove the block
-  between the `octoguard:begin`/`octoguard:end` markers and the
-  `octoguard hook claude` hook.
+- Tell the user the skill, the instructions block and the hook apply to new
+  sessions: they may need to restart the agent. Some agents also need the user
+  to accept the hook once:
+  - Codex runs a new hook only after the user reviews and trusts it with `/hooks`.
+  - Gemini CLI runs hooks only in trusted folders.
+- A hook file that already existed is kept as `<file>.octoguard.bak`. To undo
+  `--enforce`, remove the block between the `octoguard:begin`/`octoguard:end`
+  markers and the `octoguard hook <agent>` hook (for Copilot, delete
+  `hooks/octoguard.json`).
 
 To update later: `brew upgrade octoguard` (or run the script again) and
 `octoguard skills update`.

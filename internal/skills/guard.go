@@ -35,20 +35,53 @@ var shellWords = map[string]bool{
 func ghInvocations(command string) [][]string {
 	var out [][]string
 	for _, seg := range segments(command) {
-		words := strings.Fields(strings.TrimLeft(strings.TrimSpace(seg), "({"))
+		words := shellFields(strings.TrimLeft(strings.TrimSpace(seg), "({"))
 		for len(words) > 0 && (shellWords[words[0]] || isAssignment(words[0])) {
 			words = words[1:]
 		}
 		if len(words) > 0 && filepath.Base(words[0]) == "gh" {
-			args := make([]string, 0, len(words)-1)
-			for _, w := range words[1:] {
-				args = append(args, strings.Trim(w, `'"`))
-			}
-			out = append(out, args)
+			out = append(out, words[1:])
 		}
 	}
 	return out
 }
+
+// shellFields splits s on blanks outside quotes. A quoted span stays in one
+// word with its quotes, so a value like "adds --enforce" is never a flag.
+func shellFields(s string) []string {
+	var words []string
+	var cur strings.Builder
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\\' && i+1 < len(s):
+			cur.WriteByte(c)
+			i++
+			c = s[i]
+		case c == '\'' || c == '"':
+			quote = c
+		case c == ' ' || c == '\t' || c == '\n':
+			if cur.Len() > 0 {
+				words = append(words, cur.String())
+				cur.Reset()
+			}
+			continue
+		}
+		cur.WriteByte(c)
+	}
+	if cur.Len() > 0 {
+		words = append(words, cur.String())
+	}
+	return words
+}
+
+// unquote drops the quotes of a shell word.
+func unquote(w string) string { return strings.NewReplacer(`'`, "", `"`, "").Replace(w) }
 
 // segments splits a command line where a new command can start: ; | & and
 // newlines outside quotes, and the start of a $( or backtick substitution
@@ -121,13 +154,18 @@ func isAssignment(w string) bool {
 	return i > 0 && !strings.ContainsAny(w[:i], "-/.'\"")
 }
 
-// replacement returns the octoguard command to use for gh args, or "".
-func replacement(args []string) string {
-	if len(args) < 2 {
+// replacement returns the octoguard command to use for gh args (shell words,
+// quotes kept), or "".
+func replacement(words []string) string {
+	if len(words) < 2 {
 		return ""
 	}
+	args := make([]string, len(words))
+	for i, w := range words {
+		args[i] = unquote(w)
+	}
 	sub := args[0] + " " + args[1]
-	if allowed, ok := coveredFlags[sub]; ok && !onlyFlags(args[2:], allowed) {
+	if allowed, ok := coveredFlags[sub]; ok && !onlyFlags(words[2:], allowed) {
 		return "" // a flag octoguard has no equivalent for: let gh do it
 	}
 	switch sub {
@@ -170,8 +208,10 @@ var coveredFlags = map[string]map[string]bool{
 		"--label", "-l", "--reviewer", "-r", "--assignee", "-a", "--repo", "-R"),
 	"pr edit": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--base", "-B",
 		"--add-label", "--add-reviewer", "--add-assignee", "--repo", "-R"),
-	"pr merge":     set("--merge", "-m", "--squash", "-s", "--rebase", "-r", "--repo", "-R"),
-	"issue create": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--label", "-l", "--assignee", "-a", "--repo", "-R"),
+	"pr merge":      set("--merge", "-m", "--squash", "-s", "--rebase", "-r", "--repo", "-R"),
+	"pr comment":    set("--body", "-b", "--body-file", "-F", "--repo", "-R"),
+	"issue comment": set("--body", "-b", "--body-file", "-F", "--repo", "-R"),
+	"issue create":  set("--title", "-t", "--body", "-b", "--body-file", "-F", "--label", "-l", "--assignee", "-a", "--repo", "-R"),
 }
 
 func set(items ...string) map[string]bool {
@@ -182,10 +222,10 @@ func set(items ...string) map[string]bool {
 	return m
 }
 
-// onlyFlags reports whether every flag in args (--flag, --flag=value, -f) is
-// in allowed. Non-flag words (refs, values) are ignored.
-func onlyFlags(args []string, allowed map[string]bool) bool {
-	for _, a := range args {
+// onlyFlags reports whether every flag in words (--flag, --flag=value, -f) is
+// in allowed. Other words (refs, values, anything quoted) are ignored.
+func onlyFlags(words []string, allowed map[string]bool) bool {
+	for _, a := range words {
 		if !strings.HasPrefix(a, "-") || a == "-" {
 			continue
 		}

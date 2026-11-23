@@ -150,3 +150,25 @@ func TestWriteCLI_EditReviewersAndProjectByREST(t *testing.T) {
 		t.Fatal("spent GraphQL")
 	}
 }
+
+func TestWriteCLI_DaemonOfAnotherVersionWritesDirect(t *testing.T) {
+	isolate(t)
+	srv := fakegh.New(t)
+	srv.SetResponse("POST", "/repos/o/r/issues/3/comments", 201, []byte(`{"id":42}`))
+	startDaemon(t, "http://127.0.0.1:1") // a daemon that could not reach GitHub
+	setDial(t, daemon.DialRunning)
+	old := Version
+	Version = "v-other"
+	t.Cleanup(func() { Version = old })
+
+	_, stderr, err := run(t, "--api-url", srv.URL, "issue", "comment", "o/r#3", "--body", "hello")
+	if err != nil {
+		t.Fatalf("issue comment: %v (stderr %q)", err, stderr)
+	}
+	if !strings.Contains(stderr, "direct write") {
+		t.Fatalf("stderr %q lacks the version notice", stderr)
+	}
+	if srv.Calls("/repos/o/r/issues/3/comments") != 1 {
+		t.Fatal("the write did not reach GitHub directly")
+	}
+}

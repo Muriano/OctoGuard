@@ -315,22 +315,30 @@ func runWrite(cmd *cobra.Command, req write.Request) error {
 }
 
 // doWrite writes through the daemon, which spaces the writes of every CLI on
-// the machine, or directly when it is unavailable.
+// the machine, or directly when it is unavailable or of another version (an
+// older daemon would drop the fields it does not know, e.g. reviewers).
 func doWrite(ctx context.Context, cmd *cobra.Command, tok auth.Token, req write.Request) (write.Result, error) {
 	var res write.Result
 	args, err := json.Marshal(req)
 	if err != nil {
 		return res, err
 	}
-	data, ok, err := callDaemon(ctx, cmd, daemon.Request{Op: daemon.OpWrite, Token: tok.Value, Args: args})
-	if err != nil {
-		return res, err
-	}
-	if ok {
-		if err := json.Unmarshal(data, &res); err != nil {
-			return res, fmt.Errorf("decode daemon response: %w", err)
+	if st, running, _ := daemonStatus(ctx); running && st.Version != Version {
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "octoguard: daemon is version %s, this CLI %s: direct write; "+
+			"run `octoguard daemon stop` to update it\n", st.Version, Version); err != nil {
+			return res, err
 		}
-		return res, nil
+	} else {
+		data, ok, err := callDaemon(ctx, cmd, daemon.Request{Op: daemon.OpWrite, Token: tok.Value, Args: args})
+		if err != nil {
+			return res, err
+		}
+		if ok {
+			if err := json.Unmarshal(data, &res); err != nil {
+				return res, fmt.Errorf("decode daemon response: %w", err)
+			}
+			return res, nil
+		}
 	}
 
 	apiURL, err := cmd.Flags().GetString("api-url")

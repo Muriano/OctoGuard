@@ -47,19 +47,19 @@ type Request struct {
 	Body      string   `json:"body,omitempty"`
 	Base      string   `json:"base,omitempty"`
 	Head      string   `json:"head,omitempty"`
-	Labels    []string `json:"labels,omitempty"` // create: labels; edit: labels to add
+	Labels    []string `json:"labels,omitempty"`    // create: labels; edit: labels to add
 	Reviewers []string `json:"reviewers,omitempty"` // logins or org/team; "@me" is the token's user
 	Assignees []string `json:"assignees,omitempty"` // logins; "@me" is the token's user
-	Method    string   `json:"method,omitempty"` // merge: merge, squash or rebase
+	Method    string   `json:"method,omitempty"`    // merge: merge, squash or rebase
 	Project   string   `json:"project,omitempty"`
 	// ProjectOwner and ProjectNumber name a project for the REST item-add.
 	ProjectOwner  string `json:"project_owner,omitempty"`
 	ProjectNumber int    `json:"project_number,omitempty"`
-	Item      string   `json:"item,omitempty"`
-	Content   string   `json:"content,omitempty"`
-	Field     string   `json:"field,omitempty"`
-	Value     string   `json:"value,omitempty"`
-	ValueType string   `json:"value_type,omitempty"` // text (default), number, date or single-select
+	Item          string `json:"item,omitempty"`
+	Content       string `json:"content,omitempty"`
+	Field         string `json:"field,omitempty"`
+	Value         string `json:"value,omitempty"`
+	ValueType     string `json:"value_type,omitempty"` // text (default), number, date or single-select
 }
 
 // Statuses of a Result.

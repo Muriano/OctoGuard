@@ -64,8 +64,10 @@ octoguard skills install --agent claude --scope user --enforce
 - Tell the user the skill, the instructions block and the hook apply to new
   sessions: they may need to restart the agent. Some agents also need the user
   to accept the hook once:
-  - Codex runs a new hook only after the user reviews and trusts it with `/hooks`.
+  - Codex runs a new hook only after the user reviews and trusts it with
+    `/hooks`, and reads a project's `.codex/` only in trusted projects.
   - Gemini CLI runs hooks only in trusted folders.
+  - Copilot CLI skips a repository's `.github/hooks` until the folder is trusted.
 - A hook file that already existed is kept as `<file>.octoguard.bak`. To undo
   `--enforce`, remove the block between the `octoguard:begin`/`octoguard:end`
   markers and the `octoguard hook <agent>` hook (for Copilot, delete

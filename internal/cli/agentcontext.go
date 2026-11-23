@@ -55,7 +55,7 @@ var outputSchemas = map[string]*outputSchema{
 	"daemon status":     daemonSchema,
 	"daemon stop":       daemonSchema,
 	"get":               {Format: "json", Fields: []string{"schema_version", "ref", "data", "meta"}, Note: "meta: from_cache, not_modified, via, fetched_at"},
-	"hook":              {Format: "json", Fields: []string{"hookSpecificOutput"}, Note: "Claude Code PreToolUse answer; nothing printed when the command is allowed"},
+	"hook":              {Format: "json", Fields: []string{"hookSpecificOutput", "decision", "reason", "permissionDecision", "permissionDecisionReason"}, Note: "deny decision in the agent's pre-tool hook format (claude/codex: hookSpecificOutput, gemini: decision/reason, copilot: permissionDecision); nothing printed when the command is allowed"},
 	"guide":             {Format: "json", Fields: []string{"schema_version", "topics"}, Note: "with a topic: the Markdown guide"},
 	"issue comment":     writeSchema,
 	"issue create":      writeSchema,

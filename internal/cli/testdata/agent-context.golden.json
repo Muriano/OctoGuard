@@ -201,8 +201,8 @@
     },
     {
       "path": "hook",
-      "short": "Claude Code PreToolUse hook: block the gh commands octoguard replaces",
-      "args": "claude",
+      "short": "Agent pre-tool hook: block the gh commands octoguard replaces",
+      "args": "claude|codex|gemini|copilot",
       "flags": [
         {
           "name": "format",
@@ -219,9 +219,13 @@
       "output_schema": {
         "format": "json",
         "fields": [
-          "hookSpecificOutput"
+          "hookSpecificOutput",
+          "decision",
+          "reason",
+          "permissionDecision",
+          "permissionDecisionReason"
         ],
-        "note": "Claude Code PreToolUse answer; nothing printed when the command is allowed"
+        "note": "deny decision in the agent's pre-tool hook format (claude/codex: hookSpecificOutput, gemini: decision/reason, copilot: permissionDecision); nothing printed when the command is allowed"
       }
     },
     {
@@ -839,7 +843,7 @@
           "name": "enforce",
           "type": "bool",
           "default": "false",
-          "usage": "claude: also add a CLAUDE.md block and a PreToolUse hook that blocks the gh commands octoguard replaces"
+          "usage": "also add an always-in-context instructions block (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md) and a pre-tool hook that blocks the gh commands octoguard replaces"
         },
         {
           "name": "format",

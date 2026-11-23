@@ -29,23 +29,24 @@ func newSkillsCmd() *cobra.Command {
 
 func newHookCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "hook claude",
-		Short: "Claude Code PreToolUse hook: block the gh commands octoguard replaces",
-		Long: "Reads the PreToolUse input on stdin. For a Bash command running a gh command that\n" +
-			"octoguard replaces (pr view/checks/merge/comment/create/edit, issue view/comment/create,\n" +
+		Use:   "hook claude|codex|gemini|copilot",
+		Short: "Agent pre-tool hook: block the gh commands octoguard replaces",
+		Long: "Reads the agent's pre-tool hook input on stdin (Claude Code and Codex PreToolUse,\n" +
+			"Gemini CLI BeforeTool, Copilot CLI preToolUse). For a shell command running a gh command\n" +
+			"that octoguard replaces (pr view/checks/merge/comment/create/edit, issue view/comment/create,\n" +
 			"run view/watch, gh api on pulls/issues/checks/runs/rate_limit) it prints a deny decision\n" +
-			"naming the octoguard command to use; otherwise it prints nothing. Installed by\n" +
-			"`octoguard skills install --agent claude --enforce`.",
+			"in the agent's format naming the octoguard command to use; otherwise it prints nothing.\n" +
+			"Installed by `octoguard skills install --enforce`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if args[0] != "claude" {
-				return fmt.Errorf("%w: unknown hook %q: only claude", ref.ErrUsage, args[0])
+			if !slices.Contains(skills.Agents, args[0]) {
+				return fmt.Errorf("%w: unknown hook %q: must be %s", ref.ErrUsage, args[0], strings.Join(skills.Agents, ", "))
 			}
 			in, err := io.ReadAll(cmd.InOrStdin())
 			if err != nil {
 				return err
 			}
-			out, err := skills.HookResponse(in)
+			out, err := skills.HookResponse(args[0], in)
 			if err != nil || out == nil {
 				return err
 			}
@@ -88,9 +89,6 @@ func newSkillsSubCmd(name, short string, op func(skills.Options) ([]skills.Resul
 			default:
 				return fmt.Errorf("%w: invalid --scope %q: must be user or project", ref.ErrUsage, scope)
 			}
-			if enforce && !slices.Contains(opts.Agents, "claude") {
-				return fmt.Errorf("%w: --enforce applies to claude only", ref.ErrUsage)
-			}
 			results, err := op(opts)
 			if err != nil {
 				return err
@@ -122,7 +120,7 @@ func newSkillsSubCmd(name, short string, op func(skills.Options) ([]skills.Resul
 	cmd.Flags().StringVar(&scope, "scope", skills.ScopeUser, "scope: user (home directory) or project (repository root)")
 	if name == "install" {
 		cmd.Flags().BoolVar(&enforce, "enforce", false,
-			"claude: also add a CLAUDE.md block and a PreToolUse hook that blocks the gh commands octoguard replaces")
+			"also add an always-in-context instructions block (CLAUDE.md, AGENTS.md, GEMINI.md, copilot-instructions.md) and a pre-tool hook that blocks the gh commands octoguard replaces")
 	}
 	return cmd
 }

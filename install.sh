@@ -7,8 +7,9 @@
 # Options (passed to `octoguard skills install`):
 #   --agent claude|codex|gemini|copilot|all   (default: all)
 #   --scope user|project                      (default: user)
-#   --no-enforce   for claude, skip the CLAUDE.md block and the hook that
-#                  blocks the gh commands octoguard replaces (on by default)
+#   --no-enforce   skip the always-in-context instructions block (CLAUDE.md,
+#                  AGENTS.md, GEMINI.md, copilot-instructions.md) and the hook
+#                  that blocks the gh commands octoguard replaces (on by default)
 #
 # Environment:
 #   OCTOGUARD_BIN_DIR  where to put the binary when Homebrew is not used
@@ -92,7 +93,7 @@ install_from_release() {
 }
 
 if command -v octoguard >/dev/null 2>&1 &&
-	octoguard skills install --help 2>/dev/null | grep -q -- --enforce; then
+	octoguard hook --help 2>/dev/null | grep -q copilot; then
 	say "octoguard already installed: $(command -v octoguard)"
 elif command -v octoguard >/dev/null 2>&1 && command -v brew >/dev/null 2>&1 &&
 	brew list --cask muriano/tap/octoguard >/dev/null 2>&1; then
@@ -107,7 +108,5 @@ fi
 
 octoguard --version
 set -- --agent "$agent" --scope "$scope" --format text
-case "$agent" in
-claude | all) [ "$enforce" = 1 ] && set -- "$@" --enforce ;;
-esac
+[ "$enforce" = 1 ] && set -- "$@" --enforce
 octoguard skills install "$@"

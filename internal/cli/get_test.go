@@ -53,7 +53,9 @@ func startDaemon(t *testing.T, apiURL string) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- daemon.Run(ctx, daemon.Config{IdleTimeout: time.Minute, APIURL: apiURL}) }()
+	go func() {
+		done <- daemon.Run(ctx, daemon.Config{IdleTimeout: time.Minute, APIURL: apiURL, Version: Version})
+	}()
 	t.Cleanup(func() {
 		cancel()
 		select {

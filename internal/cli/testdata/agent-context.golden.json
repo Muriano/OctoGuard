@@ -293,6 +293,13 @@
       "args": "--title T",
       "flags": [
         {
+          "name": "assignee",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "assign a login (repeatable; \"@me\" is you)"
+        },
+        {
           "name": "body",
           "shorthand": "b",
           "type": "string",
@@ -421,6 +428,13 @@
       "args": "--title T --head BRANCH --base BRANCH",
       "flags": [
         {
+          "name": "assignee",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "assign a login (repeatable; \"@me\" is you)"
+        },
+        {
           "name": "base",
           "shorthand": "B",
           "type": "string",
@@ -469,6 +483,13 @@
           "usage": "owner/repo (default: the origin remote of the current directory)"
         },
         {
+          "name": "reviewer",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "request a review from a login or org/team (repeatable; \"@me\" is you)"
+        },
+        {
           "name": "title",
           "shorthand": "t",
           "type": "string",
@@ -496,14 +517,26 @@
     },
     {
       "path": "pr edit",
-      "short": "Edit a pull request's title, body or base, or add labels",
+      "short": "Edit a pull request's title, body or base, or add labels, reviewers or assignees",
       "args": "\u003cref\u003e",
       "flags": [
+        {
+          "name": "add-assignee",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "assign a login (repeatable; \"@me\" is you)"
+        },
         {
           "name": "add-label",
           "type": "stringSlice",
           "default": "[]",
           "usage": "add a label (repeatable)"
+        },
+        {
+          "name": "add-reviewer",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "request a review from a login or org/team (repeatable; \"@me\" is you)"
         },
         {
           "name": "base",
@@ -631,14 +664,14 @@
     },
     {
       "path": "project item-add",
-      "short": "Add an issue or pull request (by node ID) to a project",
-      "args": "--project PVT_... --content-id NODE_ID",
+      "short": "Add an issue or pull request to a project",
+      "args": "--project OWNER/NUMBER (--pr|--issue) \u003cref\u003e  |  --project PVT_... --content-id NODE_ID",
       "flags": [
         {
           "name": "content-id",
           "type": "string",
           "default": "",
-          "usage": "node ID of the issue or pull request (\"node_id\" in `octoguard get`)"
+          "usage": "node ID of the issue or pull request, with a PVT_ project (\"node_id\" in `octoguard get`)"
         },
         {
           "name": "format",
@@ -647,10 +680,22 @@
           "usage": "output format: json|text"
         },
         {
+          "name": "issue",
+          "type": "string",
+          "default": "",
+          "usage": "issue to add (REST)"
+        },
+        {
+          "name": "pr",
+          "type": "string",
+          "default": "",
+          "usage": "pull request to add (REST)"
+        },
+        {
           "name": "project",
           "type": "string",
           "default": "",
-          "usage": "project node ID (PVT_...)"
+          "usage": "OWNER/NUMBER of the project, or its node ID (PVT_...)"
         }
       ],
       "exit_codes": {

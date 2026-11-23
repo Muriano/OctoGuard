@@ -285,6 +285,9 @@ func TestExecute_UsageErrors(t *testing.T) {
 		{Op: PRMerge, Ref: prRef, Method: "fast-forward"},
 		{Op: PRCreate, Ref: prRef, Title: "t"},
 		{Op: PREdit, Ref: prRef},
+		{Op: ProjectItemAdd, ProjectOwner: "o", ProjectNumber: 1},
+		{Op: ProjectItemAdd, Ref: prRef, ProjectOwner: "o"},
+		{Op: ProjectItemAdd, Project: "PVT_1"},
 		{Op: ProjectItemEdit, Project: "P", Item: "I", Field: "F", Value: "x", ValueType: "number"},
 		{Op: "pr-delete", Ref: prRef},
 	} {
@@ -294,5 +297,83 @@ func TestExecute_UsageErrors(t *testing.T) {
 	}
 	if n := e.srv.GraphQLCalls(); n != 0 {
 		t.Fatalf("a rejected request reached GitHub")
+	}
+}
+
+func TestPREdit_ReviewersAndAssignees(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResource("/user", []byte(`{"login":"Me"}`), "")
+	e.srv.SetResponse("POST", "/repos/o/r/pulls/2/requested_reviewers", 201, []byte(`{"number":2}`))
+	e.srv.SetResponse("POST", "/repos/o/r/issues/2/assignees", 201, []byte(`{"assignees":[{"login":"me"}]}`))
+
+	res, err := e.w.Execute(context.Background(), Request{Op: PREdit, Ref: prRef,
+		Reviewers: []string{"ana", "org/core"}, Assignees: []string{"@me"}})
+	if err != nil || res.Status != StatusOK {
+		t.Fatalf("Execute = %+v, %v", res, err)
+	}
+	if got := string(e.srv.Body("/repos/o/r/pulls/2/requested_reviewers")); got != `{"reviewers":["ana"],"team_reviewers":["core"]}` {
+		t.Fatalf("reviewers body = %s", got)
+	}
+	if got := string(e.srv.Body("/repos/o/r/issues/2/assignees")); got != `{"assignees":["Me"]}` {
+		t.Fatalf("assignees body = %s", got)
+	}
+	if n := e.srv.Calls("/repos/o/r/pulls/2"); n != 0 {
+		t.Fatalf("PATCH sent without title/body/base")
+	}
+}
+
+func TestPREdit_AssigneeIgnoredByGitHubIsAnError(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResponse("POST", "/repos/o/r/issues/2/assignees", 201, []byte(`{"assignees":[]}`))
+	_, err := e.w.Execute(context.Background(), Request{Op: PREdit, Ref: prRef, Assignees: []string{"ghost"}})
+	if err == nil || !strings.Contains(err.Error(), "did not assign ghost") {
+		t.Fatalf("err = %v, want it to name ghost", err)
+	}
+	if e.srv.Calls("/user") != 0 {
+		t.Fatalf("GET /user without @me")
+	}
+}
+
+func TestPRCreate_ExtrasFailureNamesThePull(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResponse("POST", "/repos/o/r/pulls", 201, []byte(`{"number":7}`))
+	e.srv.SetResponse("POST", "/repos/o/r/pulls/7/requested_reviewers", 422, []byte(`{"message":"Review cannot be requested from pull request author."}`))
+	_, err := e.w.Execute(context.Background(), Request{Op: PRCreate, Ref: prRef, Title: "t", Head: "f", Base: "main",
+		Reviewers: []string{"me"}, Assignees: []string{"me"}})
+	if err == nil || !strings.Contains(err.Error(), "pull #7 created, requesting reviewers failed") {
+		t.Fatalf("err = %v", err)
+	}
+	if e.srv.Calls("/repos/o/r/issues/7/assignees") != 0 {
+		t.Fatalf("assignees sent after the reviewers failed")
+	}
+}
+
+func TestIssueCreate_Assignees(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResponse("POST", "/repos/o/r/issues", 201, []byte(`{"number":4,"assignees":[{"login":"ana"}]}`))
+	res, err := e.w.Execute(context.Background(), Request{Op: IssueCreate, Ref: prRef, Title: "t", Assignees: []string{"ana"}})
+	if err != nil || res.Status != StatusOK {
+		t.Fatalf("Execute = %+v, %v", res, err)
+	}
+	if got := string(e.srv.Body("/repos/o/r/issues")); !strings.Contains(got, `"assignees":["ana"]`) {
+		t.Fatalf("body = %s", got)
+	}
+}
+
+func TestProjectItemAdd_RESTFallsBackToUser(t *testing.T) {
+	e := newEnv(t)
+	e.srv.SetResponse("POST", "/users/me/projectsV2/1/items", 201, []byte(`{"id":55}`))
+	res, err := e.w.Execute(context.Background(), Request{Op: ProjectItemAdd, Ref: prRef, ProjectOwner: "me", ProjectNumber: 1})
+	if err != nil || res.Status != StatusOK {
+		t.Fatalf("Execute = %+v, %v", res, err)
+	}
+	if e.srv.Calls("/orgs/me/projectsV2/1/items") != 1 {
+		t.Fatalf("org path not tried first")
+	}
+	if got := string(e.srv.Body("/users/me/projectsV2/1/items")); got != `{"number":2,"owner":"o","repo":"r","type":"PullRequest"}` {
+		t.Fatalf("body = %s", got)
+	}
+	if n := e.srv.GraphQLCalls(); n != 0 {
+		t.Fatalf("REST item-add spent GraphQL")
 	}
 }

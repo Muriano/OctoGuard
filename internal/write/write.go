@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +37,9 @@ const (
 )
 
 // Request is one write. Ref is the PR or issue written to; for a create only
-// its Host, Owner and Repo are used. Project fields take node IDs.
+// its Host, Owner and Repo are used. A project item-add takes either node IDs
+// (Project, Content: GraphQL) or ProjectOwner and ProjectNumber with Ref as
+// the content (REST, core quota).
 type Request struct {
 	Op        Op       `json:"op"`
 	Ref       ref.Ref  `json:"ref"`
@@ -44,14 +47,19 @@ type Request struct {
 	Body      string   `json:"body,omitempty"`
 	Base      string   `json:"base,omitempty"`
 	Head      string   `json:"head,omitempty"`
-	Labels    []string `json:"labels,omitempty"` // create: labels; edit: labels to add
-	Method    string   `json:"method,omitempty"` // merge: merge, squash or rebase
+	Labels    []string `json:"labels,omitempty"`    // create: labels; edit: labels to add
+	Reviewers []string `json:"reviewers,omitempty"` // logins or org/team; "@me" is the token's user
+	Assignees []string `json:"assignees,omitempty"` // logins; "@me" is the token's user
+	Method    string   `json:"method,omitempty"`    // merge: merge, squash or rebase
 	Project   string   `json:"project,omitempty"`
-	Item      string   `json:"item,omitempty"`
-	Content   string   `json:"content,omitempty"`
-	Field     string   `json:"field,omitempty"`
-	Value     string   `json:"value,omitempty"`
-	ValueType string   `json:"value_type,omitempty"` // text (default), number, date or single-select
+	// ProjectOwner and ProjectNumber name a project for the REST item-add.
+	ProjectOwner  string `json:"project_owner,omitempty"`
+	ProjectNumber int    `json:"project_number,omitempty"`
+	Item          string `json:"item,omitempty"`
+	Content       string `json:"content,omitempty"`
+	Field         string `json:"field,omitempty"`
+	Value         string `json:"value,omitempty"`
+	ValueType     string `json:"value_type,omitempty"` // text (default), number, date or single-select
 }
 
 // Statuses of a Result.
@@ -164,17 +172,17 @@ func (w *Writer) Execute(ctx context.Context, req Request) (Result, error) {
 		data, err := w.do(ctx, "POST", repo+"/pulls", map[string]any{
 			"title": req.Title, "body": req.Body, "head": req.Head, "base": req.Base,
 		})
-		if err != nil || len(req.Labels) == 0 {
+		if err != nil || len(req.Labels)+len(req.Reviewers)+len(req.Assignees) == 0 {
 			return ok(data), err
 		}
 		var pr struct {
 			Number int `json:"number"`
 		}
 		if err := json.Unmarshal(data, &pr); err != nil || pr.Number <= 0 {
-			return Result{}, fmt.Errorf("write: pull created but its number is unreadable; labels not added")
+			return Result{}, fmt.Errorf("write: pull created but its number is unreadable; labels, reviewers and assignees not added")
 		}
-		if _, err := w.do(ctx, "POST", fmt.Sprintf("%s/issues/%d/labels", repo, pr.Number), map[string]any{"labels": req.Labels}); err != nil {
-			return Result{}, fmt.Errorf("write: pull #%d created, adding labels failed: %w", pr.Number, err)
+		if err := w.extras(ctx, repo, pr.Number, req); err != nil {
+			return Result{}, fmt.Errorf("write: pull #%d created, %w", pr.Number, err)
 		}
 		return ok(data), nil
 	case IssueCreate:
@@ -182,8 +190,25 @@ func (w *Writer) Execute(ctx context.Context, req Request) (Result, error) {
 		if len(req.Labels) > 0 {
 			body["labels"] = req.Labels
 		}
+		assignees, err := w.resolveMe(ctx, req.Assignees)
+		if err != nil {
+			return Result{}, err
+		}
+		if len(assignees) > 0 {
+			body["assignees"] = assignees
+		}
 		data, err := w.do(ctx, "POST", repo+"/issues", body)
-		return ok(data), err
+		if err != nil {
+			return Result{}, err
+		}
+		if err := checkAssigned(data, assignees); err != nil {
+			var is struct {
+				Number int `json:"number"`
+			}
+			_ = json.Unmarshal(data, &is)
+			return Result{}, fmt.Errorf("write: issue #%d created, %w", is.Number, err)
+		}
+		return ok(data), nil
 	case PRComment, IssueComment:
 		data, err := w.do(ctx, "POST", fmt.Sprintf("%s/issues/%d/comments", repo, r.Number), map[string]any{"body": req.Body})
 		return w.invalidate(r, ok(data), err)
@@ -192,6 +217,9 @@ func (w *Writer) Execute(ctx context.Context, req Request) (Result, error) {
 	case PRMerge:
 		return w.merge(ctx, req, repo)
 	case ProjectItemAdd:
+		if req.ProjectOwner != "" {
+			return w.projectItemAdd(ctx, req)
+		}
 		return w.mutate(ctx, `mutation($input: AddProjectV2ItemByIdInput!) { addProjectV2ItemById(input: $input) { item { id } } }`,
 			map[string]any{"projectId": req.Project, "contentId": req.Content})
 	case ProjectItemEdit:
@@ -209,8 +237,14 @@ func validate(req Request) error {
 	r := req.Ref
 	switch req.Op {
 	case ProjectItemAdd:
+		if req.ProjectOwner != "" {
+			if req.ProjectNumber <= 0 || r.Host != ref.Host || r.Owner == "" || r.Repo == "" || r.Number <= 0 {
+				return usagef("project item-add --project OWNER/NUMBER needs --pr or --issue <ref>")
+			}
+			return nil
+		}
 		if req.Project == "" || req.Content == "" {
-			return usagef("project item-add needs --project and --content-id")
+			return usagef("project item-add needs --project and --content-id (PVT_ IDs) or --pr/--issue (OWNER/NUMBER)")
 		}
 		return nil
 	case ProjectItemEdit:
@@ -247,8 +281,8 @@ func validate(req Request) error {
 			return usagef("a comment needs --body or --body-file")
 		}
 	case PREdit:
-		if req.Title == "" && req.Body == "" && req.Base == "" && len(req.Labels) == 0 {
-			return usagef("pr edit needs --title, --body, --body-file, --base or --add-label")
+		if req.Title == "" && req.Body == "" && req.Base == "" && len(req.Labels)+len(req.Reviewers)+len(req.Assignees) == 0 {
+			return usagef("pr edit needs --title, --body, --body-file, --base, --add-label, --add-reviewer or --add-assignee")
 		}
 	case PRMerge:
 		if !slices.Contains([]string{"merge", "squash", "rebase"}, req.Method) {
@@ -295,14 +329,14 @@ func (w *Writer) edit(ctx context.Context, req Request, repo string) (Result, er
 			return Result{}, err
 		}
 	}
-	if len(req.Labels) > 0 {
-		labels, lerr := w.do(ctx, "POST", fmt.Sprintf("%s/issues/%d/labels", repo, r.Number), map[string]any{"labels": req.Labels})
-		if data == nil {
-			data = labels
+	if err = w.extras(ctx, repo, r.Number, req); err != nil {
+		if data != nil {
+			err = fmt.Errorf("write: pull #%d edited, %w", r.Number, err)
+		} else {
+			err = fmt.Errorf("write: pull #%d: %w", r.Number, err)
 		}
-		err = lerr
 	}
-	// Invalidate even when only the labels failed: the PATCH went through.
+	// Invalidate even when only an extra failed: the PATCH went through.
 	if ierr := w.Cache.InvalidatePrefix(w.Scope, r.Key()+"/"); ierr != nil && err == nil {
 		err = ierr
 	}
@@ -341,6 +375,124 @@ func (w *Writer) merge(ctx context.Context, req Request, repo string) (Result, e
 		}, nil
 	}
 	return w.invalidate(r, ok(data), err)
+}
+
+// extras adds the labels, reviewers and assignees of req to PR n, in that
+// order, stopping at the first failure.
+func (w *Writer) extras(ctx context.Context, repo string, n int, req Request) error {
+	if len(req.Labels) > 0 {
+		if _, err := w.do(ctx, "POST", fmt.Sprintf("%s/issues/%d/labels", repo, n), map[string]any{"labels": req.Labels}); err != nil {
+			return fmt.Errorf("adding labels failed: %w", err)
+		}
+	}
+	if len(req.Reviewers) > 0 {
+		reviewers, err := w.resolveMe(ctx, req.Reviewers)
+		if err != nil {
+			return err
+		}
+		users, teams := []string{}, []string{}
+		for _, r := range reviewers {
+			if _, team, isTeam := strings.Cut(r, "/"); isTeam {
+				teams = append(teams, team)
+			} else {
+				users = append(users, r)
+			}
+		}
+		if _, err := w.do(ctx, "POST", fmt.Sprintf("%s/pulls/%d/requested_reviewers", repo, n),
+			map[string]any{"reviewers": users, "team_reviewers": teams}); err != nil {
+			return fmt.Errorf("requesting reviewers failed: %w", err)
+		}
+	}
+	if len(req.Assignees) > 0 {
+		assignees, err := w.resolveMe(ctx, req.Assignees)
+		if err != nil {
+			return err
+		}
+		data, err := w.do(ctx, "POST", fmt.Sprintf("%s/issues/%d/assignees", repo, n), map[string]any{"assignees": assignees})
+		if err != nil {
+			return fmt.Errorf("adding assignees failed: %w", err)
+		}
+		return checkAssigned(data, assignees)
+	}
+	return nil
+}
+
+// resolveMe replaces "@me" in logins with the login of the token's user,
+// asking GitHub only when "@me" is there.
+func (w *Writer) resolveMe(ctx context.Context, logins []string) ([]string, error) {
+	if !slices.Contains(logins, "@me") {
+		return logins, nil
+	}
+	data, err := w.Client.Do(ctx, "GET", "/user", nil)
+	if err != nil {
+		return nil, fmt.Errorf("write: resolve @me: %w", err)
+	}
+	var u struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal(data, &u); err != nil || u.Login == "" {
+		return nil, fmt.Errorf("write: resolve @me: no login in GET /user")
+	}
+	out := make([]string, len(logins))
+	for i, l := range logins {
+		if l == "@me" {
+			l = u.Login
+		}
+		out[i] = l
+	}
+	return out, nil
+}
+
+// checkAssigned reports the logins GitHub left out of the "assignees" of
+// data: it drops users who cannot be assigned without an error.
+func checkAssigned(data json.RawMessage, want []string) error {
+	if len(want) == 0 {
+		return nil
+	}
+	var got struct {
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		return fmt.Errorf("assignees unverifiable: %w", err)
+	}
+	assigned := map[string]bool{}
+	for _, a := range got.Assignees {
+		assigned[strings.ToLower(a.Login)] = true
+	}
+	var missing []string
+	for _, login := range want {
+		if !assigned[strings.ToLower(login)] {
+			missing = append(missing, login)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("GitHub did not assign %s (no access to the repository?)", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// projectItemAdd adds the PR or issue req.Ref to a Projects (v2) project by
+// REST, which spends core quota rather than GraphQL. The owner is tried as an
+// organization first, then as a user.
+func (w *Writer) projectItemAdd(ctx context.Context, req Request) (Result, error) {
+	r := req.Ref
+	typ := "Issue"
+	if r.Kind == ref.PR {
+		typ = "PullRequest"
+	}
+	body := map[string]any{"type": typ, "owner": r.Owner, "repo": r.Repo, "number": r.Number}
+	owner := url.PathEscape(req.ProjectOwner)
+	data, err := w.do(ctx, "POST", fmt.Sprintf("/orgs/%s/projectsV2/%d/items", owner, req.ProjectNumber), body)
+	var apiErr *gh.APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+		data, err = w.do(ctx, "POST", fmt.Sprintf("/users/%s/projectsV2/%d/items", owner, req.ProjectNumber), body)
+	}
+	if err != nil {
+		return Result{}, err
+	}
+	return ok(data), nil
 }
 
 func (w *Writer) mutate(ctx context.Context, query string, input map[string]any) (Result, error) {

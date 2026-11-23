@@ -427,15 +427,19 @@ func (rd *read) untilReset(resource string) time.Duration {
 }
 
 // Do sends a REST write (POST, PATCH, PUT, ...) of body, encoded as JSON, to
-// path and returns the response body. Writes are never cached; the caller
+// path and returns the response body; a nil body sends none. Writes are never cached; the caller
 // invalidates what they touch.
 func (c *Client) Do(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("github: %w", err)
+	var payload io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("github: %w", err)
+		}
+		payload = bytes.NewReader(data)
 	}
 	rd := &read{c: c, ctx: ctx, scope: Scope(ref.Host, c.tok)}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
 		return nil, fmt.Errorf("github: %w", err)
 	}

@@ -278,3 +278,33 @@ func TestHookResponse_Agents(t *testing.T) {
 		}
 	}
 }
+
+func TestEnforce_CopilotHookFileNotOurs(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".github", "hooks", "octoguard.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(root, "secret")
+	if err := os.WriteFile(secret, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Enforce(Options{Agents: []string{"copilot"}, Scope: ScopeProject, Root: root}); err == nil {
+		t.Fatal("symlinked hook file: want an error")
+	}
+	if got, _ := os.ReadFile(secret); string(got) != "key" {
+		t.Fatalf("symlink target changed: %q", got)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Enforce(Options{Agents: []string{"copilot"}, Scope: ScopeProject, Root: root}); err == nil {
+		t.Fatal("non-JSON hook file: want an error")
+	}
+}

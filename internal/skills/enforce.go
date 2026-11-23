@@ -200,11 +200,18 @@ func addHook(path, event, matcher string, hook map[string]any) (string, error) {
 }
 
 // writeCopilotHook writes the Copilot CLI hook file, which octoguard owns
-// whole. A different previous file is kept as <path>.octoguard.bak.
+// whole. A different previous file is kept as <path>.octoguard.bak; one that
+// is not a plain JSON file (a symlink, say) is left alone.
 func writeCopilotHook(path, command string) (string, error) {
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s: not a regular file", path)
+	}
 	current, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", err
+	}
+	if len(current) > 0 && !json.Valid(current) {
+		return "", fmt.Errorf("%s: not JSON", path)
 	}
 	file := map[string]any{"version": 1, "hooks": map[string]any{"preToolUse": []any{
 		map[string]any{"type": "command", "bash": command, "timeoutSec": 10},

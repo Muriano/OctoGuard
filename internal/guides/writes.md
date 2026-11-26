@@ -21,4 +21,4 @@ GitHub refuses it exits 4 with `"status":"rejected"` and its `reason`;
 Reviewers are logins or `org/team`; `@me` is you. Assignees GitHub drops
 silently (no access) are reported as an error. `item-add --project OWNER/NUMBER`
 writes by REST (core quota), so it works with GraphQL spent; `PVT_` uses GraphQL.
-The hook lets through `gh pr|issue` writes with flags octoguard lacks (`--auto`).
+The hook lets through any flag, endpoint or field octoguard lacks (`--auto`, logs).

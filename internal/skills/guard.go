@@ -155,7 +155,9 @@ func isAssignment(w string) bool {
 }
 
 // replacement returns the octoguard command to use for gh args (shell words,
-// quotes kept), or "".
+// quotes kept), or "". It names a replacement only when octoguard gives the
+// same data or does the same write: any flag, endpoint or field it lacks lets
+// gh run.
 func replacement(words []string) string {
 	if len(words) < 2 {
 		return ""
@@ -168,13 +170,14 @@ func replacement(words []string) string {
 	if allowed, ok := coveredFlags[sub]; ok && !onlyFlags(words[2:], allowed) {
 		return "" // a flag octoguard has no equivalent for: let gh do it
 	}
+	if fields, ok := jsonFields[sub]; ok && !jsonCovered(args[2:], fields) {
+		return "" // --json asks for a field octoguard does not return
+	}
 	switch sub {
 	case "pr view":
 		return "`octoguard get pr <ref>` (also reviews, comments, checks)"
 	case "pr checks":
 		return "`octoguard wait pr <ref> --until checks-green` to wait, `octoguard get checks <ref>` to read"
-	case "pr status":
-		return "`octoguard get pr <ref>`"
 	case "pr merge":
 		return "`octoguard pr merge <ref> [--squash]`"
 	case "pr comment", "pr create", "pr edit":
@@ -186,10 +189,10 @@ func replacement(words []string) string {
 	case "run watch":
 		return "`octoguard wait run <run URL>`"
 	case "run view":
-		return "`octoguard get runs <run URL>` to read, `octoguard wait run <run URL>` to wait"
+		return "`octoguard get runs <run URL>` to read the run, `octoguard wait run <run URL>` to wait. " +
+			"For job logs `gh run view <id> --log-failed` (or `--log`, `--job`) is allowed"
 	case "api graphql":
-		q := strings.Join(args[2:], " ")
-		if strings.Contains(q, "pullRequest") || strings.Contains(q, "issue(") || strings.Contains(q, "rateLimit") {
+		if graphQLCovered(words[2:]) {
 			return "`octoguard get pr|issue|reviews|comments|checks <ref>` or `octoguard quota`"
 		}
 		return ""
@@ -200,9 +203,9 @@ func replacement(words []string) string {
 	return ""
 }
 
-// coveredFlags lists, for the gh writes octoguard replaces, the flags it has
+// coveredFlags lists, for the gh commands octoguard replaces, the flags it has
 // an equivalent for. A call with any other flag (--remove-label, --draft,
-// --auto, --delete-branch, ...) is let through.
+// --auto, --log-failed, --web, ...) is let through.
 var coveredFlags = map[string]map[string]bool{
 	"pr create": set("--title", "-t", "--body", "-b", "--body-file", "-F", "--base", "-B", "--head", "-H",
 		"--label", "-l", "--reviewer", "-r", "--assignee", "-a", "--repo", "-R"),
@@ -212,6 +215,43 @@ var coveredFlags = map[string]map[string]bool{
 	"pr comment":    set("--body", "-b", "--body-file", "-F", "--repo", "-R"),
 	"issue comment": set("--body", "-b", "--body-file", "-F", "--repo", "-R"),
 	"issue create":  set("--title", "-t", "--body", "-b", "--body-file", "-F", "--label", "-l", "--assignee", "-a", "--repo", "-R"),
+	"pr view":       set("--comments", "-c", "--json", "--jq", "-q", "--template", "-t", "--repo", "-R"),
+	"issue view":    set("--comments", "-c", "--json", "--jq", "-q", "--template", "-t", "--repo", "-R"),
+	"pr checks":     set("--watch", "--fail-fast", "--interval", "-i", "--required", "--repo", "-R"),
+	"run view":      set("--repo", "-R"),
+	"run watch":     set("--exit-status", "--interval", "-i", "--compact", "--repo", "-R"),
+}
+
+// jsonFields lists the `--json` fields octoguard returns for gh views.
+var jsonFields = map[string]map[string]bool{
+	"pr view": set("number", "title", "body", "state", "isDraft", "url", "createdAt", "updatedAt", "closedAt",
+		"mergedAt", "author", "labels", "mergeable", "mergeStateStatus", "headRefName", "headRefOid",
+		"baseRefName", "reviews", "statusCheckRollup", "comments"),
+	"issue view": set("number", "title", "body", "state", "url", "createdAt", "updatedAt", "closedAt",
+		"author", "labels", "comments"),
+}
+
+// jsonCovered reports whether every field a --json flag in args asks for is
+// in covered. No --json flag means nothing extra is asked for.
+func jsonCovered(args []string, covered map[string]bool) bool {
+	for i, a := range args {
+		var list string
+		switch {
+		case a == "--json" && i+1 < len(args):
+			list = args[i+1]
+		case strings.HasPrefix(a, "--json="):
+			list = strings.TrimPrefix(a, "--json=")
+		default:
+			continue
+		}
+		for _, f := range strings.Split(list, ",") {
+			// A $( or backtick substitution can leave its closer on the last field.
+			if !covered[strings.TrimRight(strings.TrimSpace(f), ")`")] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func set(items ...string) map[string]bool {
@@ -237,35 +277,122 @@ func onlyFlags(words []string, allowed map[string]bool) bool {
 	return true
 }
 
-// apiReplacement maps a `gh api` call onto octoguard by its endpoint.
+// graphQLFields are the GraphQL names octoguard's own reads select (see
+// internal/gh/resources.go), plus query syntax. A query that only uses these
+// asks for nothing octoguard does not return.
+var graphQLFields = set("query", "repository", "owner", "repo", "name", "number", "pullRequest", "issue",
+	"issueOrPullRequest", "title", "body", "state", "isDraft", "merged", "mergeable", "mergeStateStatus", "url",
+	"createdAt", "updatedAt", "closedAt", "mergedAt", "headRefName", "headRefOid", "baseRefName", "author",
+	"login", "labels", "nodes", "edges", "node", "reviews", "databaseId", "submittedAt", "comments", "commits",
+	"commit", "oid", "statusCheckRollup", "contexts", "__typename", "on", "CheckRun", "StatusContext", "status",
+	"conclusion", "context", "rateLimit", "cost", "remaining", "limit", "resetAt", "used", "first", "last",
+	"String", "Int")
+
+var (
+	gqlString = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
+	gqlName   = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+)
+
+// graphQLCovered reports whether the query passed to `gh api graphql` (as
+// shell words) is a read of PR, issue or quota data octoguard serves. Mutations,
+// queries read from a file and any unknown field are not covered.
+func graphQLCovered(words []string) bool {
+	var query string
+	for _, w := range words {
+		if v, ok := strings.CutPrefix(w, "query="); ok {
+			query = v
+		}
+	}
+	query = strings.Trim(query, `'"`)
+	if query == "" || strings.HasPrefix(query, "@") {
+		return false
+	}
+	names := gqlName.FindAllString(gqlString.ReplaceAllString(query, ""), -1)
+	if len(names) == 0 {
+		return false
+	}
+	for _, n := range names {
+		if !graphQLFields[n] {
+			return false
+		}
+	}
+	return true
+}
+
+// apiValueFlags are the `gh api` flags that take a value.
+var apiValueFlags = set("-X", "--method", "-q", "--jq", "-t", "--template", "-H", "--header",
+	"-f", "--raw-field", "-F", "--field", "--input", "--cache", "-p", "--preview", "--hostname")
+
+// apiPath matches the endpoints octoguard serves, after repos/{owner}/{repo}/.
+var (
+	apiRepo     = regexp.MustCompile(`^repos/[^/]+/[^/]+/(.+)$`)
+	apiPR       = regexp.MustCompile(`^pulls/\d+(/reviews)?$`)
+	apiIssue    = regexp.MustCompile(`^issues/\d+(/comments)?$`)
+	apiComment  = regexp.MustCompile(`^issues/\d+/comments$`)
+	apiMerge    = regexp.MustCompile(`^pulls/\d+/merge$`)
+	apiRun      = regexp.MustCompile(`^actions/runs/\d+$`)
+	apiChecks   = regexp.MustCompile(`^commits/[^/]+/(check-runs|status)$`)
+	apiHeadRuns = regexp.MustCompile(`^head_sha=[^&]+$`)
+)
+
+// apiReplacement maps a `gh api` call onto octoguard by its method and exact
+// endpoint. Endpoints octoguard does not serve (logs, jobs, files, inline
+// review comments, listings, ...) are let through.
 func apiReplacement(args []string) string {
-	method, path := "GET", ""
+	method, path, fields := "", "", false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		name, _, hasValue := strings.Cut(a, "=")
 		switch {
-		case a == "-X" || a == "--method":
-			if i+1 < len(args) {
-				method = strings.ToUpper(args[i+1])
+		case apiValueFlags[name] && strings.HasPrefix(a, "-"):
+			v := ""
+			if hasValue {
+				v = a[len(name)+1:]
+			} else if i+1 < len(args) {
+				v = args[i+1]
 				i++
+			}
+			switch name {
+			case "-X", "--method":
+				method = strings.ToUpper(v)
+			case "-f", "--raw-field", "-F", "--field", "--input":
+				fields = true
 			}
 		case strings.HasPrefix(a, "-"):
 		case path == "":
 			path = strings.TrimPrefix(a, "/")
 		}
 	}
-	path, _, _ = strings.Cut(path, "?")
+	if method == "" {
+		method = "GET"
+		if fields { // gh api sends POST when it has fields
+			method = "POST"
+		}
+	}
+	path, query, _ := strings.Cut(path, "?")
+	if path == "rate_limit" || path == "user" {
+		if method == "GET" {
+			return "`octoguard quota`"
+		}
+		return ""
+	}
+	m := apiRepo.FindStringSubmatch(path)
+	if m == nil {
+		return ""
+	}
+	rest := m[1]
 	switch {
-	case path == "rate_limit" || path == "user":
-		return "`octoguard quota`"
-	case strings.HasSuffix(path, "/merge") && method == "PUT":
+	case method == "PUT" && apiMerge.MatchString(rest):
 		return "`octoguard pr merge <ref>`"
-	case strings.HasSuffix(path, "/comments") && method == "POST":
+	case method == "POST" && apiComment.MatchString(rest):
 		return "`octoguard pr comment <ref>` or `octoguard issue comment <ref>`"
-	case strings.Contains(path, "/check-runs") || strings.Contains(path, "/check-suites") || strings.HasSuffix(path, "/status"):
+	case method != "GET":
+		return ""
+	case apiChecks.MatchString(rest):
 		return "`octoguard get checks <ref>`, or `octoguard wait pr <ref> --until checks-green`"
-	case strings.Contains(path, "/actions/runs"):
+	case apiRun.MatchString(rest), rest == "actions/runs" && apiHeadRuns.MatchString(query):
 		return "`octoguard get runs <ref or run URL>`, or `octoguard wait run <run URL>`"
-	case strings.Contains(path, "/pulls") || strings.Contains(path, "/issues"):
+	case apiPR.MatchString(rest) || apiIssue.MatchString(rest):
 		return "`octoguard get pr|issue|reviews|comments <ref>`, or `octoguard wait`"
 	}
 	return ""

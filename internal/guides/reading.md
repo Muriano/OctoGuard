@@ -12,4 +12,6 @@ Reads go through the daemon (started on demand) and its cache:
 graphql) and `fetched_at`.
 
 `runs` takes a workflow run ref (`owner/repo#RUN_ID` or an actions/runs URL).
+It returns the run, not job logs: for those use `gh run view <id> --log-failed`
+(or `--log`, `--job`), which the hook lets through.
 Read once and reuse the result; to watch for changes use `octoguard wait`.
